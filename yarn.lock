@@ -1665,6 +1665,10 @@ lodash.merge@^4.6.0:
   version "4.6.0"
   resolved "https://registry.yarnpkg.com/lodash.merge/-/lodash.merge-4.6.0.tgz#69884ba144ac33fe699737a6086deffadd0f89c5"
 
+lodash@4.13.1:
+  version "4.13.1"
+  resolved "https://registry.yarnpkg.com/lodash/-/lodash-4.13.1.tgz#83e4b10913f48496d4d16fec4a560af2ee744b68"
+
 lodash@^4.14.0, lodash@^4.17.2, lodash@^4.17.4, lodash@^4.2.0, lodash@^4.2.1:
   version "4.17.4"
   resolved "https://registry.yarnpkg.com/lodash/-/lodash-4.17.4.tgz#78203a4d1c328ae1d86dca6460e369b57f4055ae"
@@ -1793,6 +1797,12 @@ needle@1.6.0:
 negotiator@0.6.1:
   version "0.6.1"
   resolved "https://registry.yarnpkg.com/negotiator/-/negotiator-0.6.1.tgz#2b327184e8992101177b28563fb5e7102acd0ca9"
+
+nesthydrationjs@^1.0.3:
+  version "1.0.3"
+  resolved "https://registry.yarnpkg.com/nesthydrationjs/-/nesthydrationjs-1.0.3.tgz#fc3975747be72604eeaeea1761261e5c868ed5d8"
+  dependencies:
+    lodash "4.13.1"
 
 node-fetch@1.7.3, node-fetch@^1.0.1:
   version "1.7.3"

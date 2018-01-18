@@ -1,14 +1,7 @@
-import {
-  GraphQLFloat,
-  GraphQLInt,
-  GraphQLList,
-  GraphQLNonNull,
-  GraphQLObjectType,
-  GraphQLSchema,
-  GraphQLString
-} from 'graphql'
+import { GraphQLFloat, GraphQLInt, GraphQLNonNull, GraphQLObjectType, GraphQLSchema, GraphQLString } from 'graphql'
 import GraphQLDate from 'graphql-date'
 import * as dbHelper from '../../database/dbHelper'
+import { getTablesTest } from '../../database/queries'
 
 let schema
 
@@ -19,27 +12,15 @@ async function createSchema () {
   try {
     db = await dbHelper.attach()
 
-    // let result = await dbHelper.query(db, `
-    //   SELECT FIRST(20) TRIM(rdb$relation_name)      AS "name"
-    //   FROM rdb$relations
-    //   WHERE rdb$view_blr IS NULL
-    //     AND (rdb$system_flag IS NULL OR rdb$system_flag = 0)
-    //   ORDER BY 1
-    // `)
-    let result = [
-      {name: 'GD_PEOPLE'},
-      {name: 'GD_CONTACT'},
-      {name: 'GD_PLACE'},
-      {name: 'WG_POSITION'}
-    ]
+    const context = {db, tables: [], types: [], links: []}
+    context.tables = await getTablesTest(context)
 
     let queryFields = {}
-    const context = {db, types: []}
-
-    for (let i = 0; i < result.length; i++) {
-      const table = result[i]
+    for (let i = 0; i < context.tables.length; i++) {
+      const table = context.tables[i]
       queryFields[escape(table.name)] = {
-        type: new GraphQLList(await createType(context, table.name))
+        type: await createType(context, table),
+        description: indicesToStr(table.indices)
       }
     }
 
@@ -52,105 +33,63 @@ async function createSchema () {
   } catch (error) {
     console.log(error)
   } finally {
-    if (db) {
+    try {
       await dbHelper.detach(db)
+    } catch (error) {
+      console.log(error)
     }
   }
 }
 
-// async function initICommunicationTypes (db) {
-//   let result = await dbHelper.query(db, `
-//     SELECT FIRST(20) TRIM(rdb$relation_name)      AS "name"
-//     FROM rdb$relations
-//     WHERE rdb$view_blr IS NULL
-//       AND (rdb$system_flag IS NULL OR rdb$system_flag = 0)
-//     ORDER BY 1
-//   `)
-// }
-
-async function createType (context, toTableName) {
-  const duplicate = context.types.find(type => type.name === escape(toTableName))
+async function createType (context, table) {
+  const duplicate = context.types.find(type => type.name === escape(table.name))
   if (duplicate) return duplicate
 
   let tableFieldsTypes = {}
   const type = new GraphQLObjectType({
-    name: escape(toTableName),
-    description: await getEntityNames(context.db, toTableName),
-    interfaces: () => [],
-    fields: () => tableFieldsTypes
+    name: escape(table.name),
+    description: indicesToStr(table.indices),
+    fields: tableFieldsTypes
   })
   context.types.push(type)
 
-  const tableFields = await dbHelper.query(context.db, `
-        SELECT
-          TRIM(rlf.rdb$field_name)                AS "fieldName",
-          nlp_f.usr$name                          AS "name",
-          f.rdb$field_type                        AS "fieldType",
-          f.rdb$null_flag                         AS "nullFlag",
-          TRIM(ref_rel_const.rdb$relation_name)   AS "referenceTable"
-        FROM RDB$RELATION_FIELDS rlf
-          LEFT JOIN rdb$fields f ON f.rdb$field_name = rlf.rdb$field_source
-          LEFT JOIN usr$nlp_fields nlp_f 
-            ON nlp_f.usr$relation_name = rlf.rdb$relation_name
-            AND nlp_f.usr$field_name = rlf.rdb$field_name
-          LEFT JOIN rdb$relation_constraints const
-            ON const.rdb$relation_name = rlf.rdb$relation_name
-            AND const.rdb$constraint_type = 'FOREIGN KEY'
-            AND EXISTS(
-              SELECT *
-              FROM rdb$index_segments i
-              WHERE i.RDB$FIELD_NAME = rlf.rdb$field_name
-                AND i.RDB$INDEX_NAME = const.RDB$INDEX_NAME
-            )
-            LEFT JOIN rdb$ref_constraints ref_ref_const
-              ON ref_ref_const.rdb$constraint_name = const.rdb$constraint_name
-                LEFT JOIN rdb$relation_constraints ref_rel_const
-                  ON ref_rel_const.rdb$constraint_name = ref_ref_const.rdb$const_name_uq
-        WHERE rlf.RDB$RELATION_NAME = ?
-        ORDER BY 1
-      `, [toTableName])
-
-  for (let y = 0; y < tableFields.length; y++) {
-    const tableField = tableFields[y]
-    console.log(`${toTableName}(${tableField.fieldName}) to ${tableField.referenceTable}`)
+  for (let i = 0; i < table.fields.length; i++) {
+    const tableField = table.fields[i]
+    console.log(`${table.name}(${tableField.name}) to ${tableField.tableNameRef}`)
 
     let fieldType
-    if (tableField.referenceTable) {
-      const duplicate = context.types.find(type => type.name === escape(tableField.referenceTable))
-      if (duplicate) {
-        fieldType = new GraphQLList(duplicate)
-      } else {
-        fieldType = new GraphQLList(await createType(context, tableField.referenceTable))
-      }
+    if (tableField.tableNameRef) {
+      const tableRef = context.tables.find((table) => table.name === tableField.tableNameRef)
+      fieldType = createLinkType(context, await createType(context, tableRef))
     } else {
-      fieldType = convertToGraphQLType(tableField.fieldType)
+      fieldType = convertToGraphQLType(tableField.type)
     }
-    if (tableField.nullFlag) fieldType = new GraphQLNonNull(fieldType)
 
-    tableFieldsTypes[escape(tableField.fieldName)] = {
-      type: fieldType
+    if (tableField.nullFlag) fieldType = new GraphQLNonNull(fieldType)
+    tableFieldsTypes[escape(tableField.name)] = {
+      type: fieldType,
+      description: indicesToStr(tableField.indices)
     }
   }
 
   return type
 }
 
-async function getEntityNames (db, tableName) {
-  let table = await dbHelper.query(db, `
-      SELECT
-        TRIM(REPLACE(entities.usr$name,  ',', ''))                AS "entityName"
-      FROM usr$nlp_tables tables
-        LEFT JOIN usr$nlp_entities entities ON entities.usr$table_key = tables.id
-      WHERE tables.usr$relation_name = ?
-        AND TRIM(REPLACE(entities.usr$name,  ',', '')) > ''
-      ORDER BY entities.usr$name
-    `, [tableName])
-
-  return table.reduce((prev, cur, index, array) => {
-    prev += cur.entityName
-    if (index !== array.length - 1) prev += ','
-    return prev
-  }, '')
+function createLinkType (context, type) {
+  return type
+  console.log(type.name)
+  const name = `link_to_${type.name}`
+  let link = context.links.find((link) => link.name === name)
+  if (!link) {
+    link = new GraphQLObjectType({
+      name: name,
+      fields: () => ({
+        link: {type}
+      })
+    })
+    context.links.push(link)
+  }
+  return link
 }
 
 function convertToGraphQLType (firebirdType) {
@@ -170,6 +109,14 @@ function convertToGraphQLType (firebirdType) {
     default:
       return GraphQLString
   }
+}
+
+function indicesToStr (indices) {
+  return indices.reduce((prev, cur, index) => {
+    if (index) prev += ','
+    prev += cur.key
+    return prev
+  }, '')
 }
 
 function escape (str) {
