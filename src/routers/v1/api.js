@@ -1,0 +1,31 @@
+import express from 'express'
+import graphqlHTTP from 'express-graphql'
+import { express as expressMiddleware } from 'graphql-voyager/middleware'
+import { createQueueDBContext, destroyQueueDBContext } from '../../graphql/v1/queue'
+import createSchema from '../../graphql/v1/createSchema'
+
+let router = express.Router()
+
+router.use('/schema/viewer', (req, res, next) => {
+  expressMiddleware({
+    endpointUrl: '/api/v1',
+    displayOptions: req.query
+  })(req, res, next)
+})
+
+router.use('/', graphqlHTTP(async (req) => {
+  const startTime = Date.now()
+  let context = await createQueueDBContext()
+  let schema = await createSchema()
+  return {
+    schema: schema,
+    graphiql: true,
+    context: context,
+    async extensions ({document, variables, operationName, result}) {
+      await destroyQueueDBContext(context)
+      return {runTime: (Date.now() - startTime) + ' мсек'}
+    }
+  }
+}))
+
+export default router
