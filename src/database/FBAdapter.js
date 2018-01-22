@@ -93,10 +93,12 @@ export default class FBAdapter {
       WHERE r.rdb$view_blr IS NULL
         AND (r.rdb$system_flag IS NULL OR r.rdb$system_flag = 0)
         
-        AND (r.rdb$relation_name = 'GD_PEOPLE'
+        AND (
+          r.rdb$relation_name = 'GD_PEOPLE'
           OR r.rdb$relation_name = 'GD_CONTACT'
-          OR r.rdb$relation_name = 'GD_PLACE'
-          OR r.rdb$relation_name = 'WG_POSITION')
+--          OR r.rdb$relation_name = 'GD_PLACE'
+--          OR r.rdb$relation_name = 'WG_POSITION'
+        )
           
       ORDER BY r.rdb$relation_name
     `)
@@ -113,7 +115,7 @@ export default class FBAdapter {
           key: 'fieldIndexName'
         }],
         type: {column: 'fieldType', type: FBAdapter._convertType},
-        nullable: {column: 'nullFlag', type: 'BOOLEAN', default: false},
+        nonNull: {column: 'nullFlag', type: 'BOOLEAN', default: false},
         nameRef: 'relationName',
         refs: [{
           id: {column: 'refKey', type: 'NUMBER'},

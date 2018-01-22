@@ -17,8 +17,11 @@ export default class NLPSchema {
   static TYPE_FLOAT = 'TYPE_FLOAT'
   static TYPE_DATE = 'TYPE_DATE'
 
-  constructor (adapter) {
-    this._adapter = adapter
+  constructor (options) {
+    this._adapter = options.adapter
+    this._emulatedLinkCoder = options.emulatedLinkCoder || ((table, field, ref) => `EMULATED_LINK_${ref.id}`)
+    this._emulatedEntityCoder = options.emulatedEntityCoder || ((table, field, ref) => `EMULATED_${table.name}_${ref.id}`)
+
     this.getSchema().catch(console.log) //tmp
   }
 
@@ -102,12 +105,15 @@ export default class NLPSchema {
         let fieldType
         if (tableField.nameRef) {
           const tableRef = context.tables.find((table) => table.name === tableField.nameRef)
+          if (!tableRef) return fields
+
           fieldType = this._createLinkType(context, this._createType(context, tableRef))
         } else {
           fieldType = NLPSchema._convertToGraphQLType(tableField.type)
+          fields = {...fields, ...this._createEmulatedLinkFields(context, table, tableField)}
         }
 
-        if (tableField.nullable) fieldType = new GraphQLNonNull(fieldType)
+        if (tableField.nonNull) fieldType = new GraphQLNonNull(fieldType)
         fields[NLPSchema._escape(tableField.name)] = {
           type: fieldType,
           description: NLPSchema._indicesToStr(tableField.indices)
@@ -119,10 +125,32 @@ export default class NLPSchema {
     return type
   }
 
+  _createEmulatedLinkFields (context, table, field) {   //TODO optimize (cache)
+    return field.refs.reduce((fields, ref) => {
+      fields[this._emulatedLinkCoder(table, field, ref)] = {
+        type: new GraphQLObjectType({
+          name: this._emulatedEntityCoder(table, field, ref),
+          description: ref.description,
+          fields: () => table.fields.reduce((fields, tableField) => {
+            if (tableField.refs.find((item) => item.id === ref.id)) {
+              fields[NLPSchema._escape(tableField.name)] = {
+                type: NLPSchema._convertToGraphQLType(tableField.type),
+                description: NLPSchema._indicesToStr(tableField.indices)
+              }
+            }
+            return fields
+          }, {})
+        }),
+        description: NLPSchema._indicesToStr(ref.indices)
+      }
+      return fields
+    }, {})
+  }
+
   _createLinkType (context, type) {
     return type
     console.log(type.name)
-    const name = `link_to_${type.name}`
+    const name = `LINK_TO_${type.name}`
     let link = context.links.find((link) => link.name === name)
     if (!link) {
       link = new GraphQLObjectType({
