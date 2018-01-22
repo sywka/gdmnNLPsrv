@@ -2,7 +2,7 @@ import express from 'express'
 import graphqlHTTP from 'express-graphql'
 import { express as expressMiddleware } from 'graphql-voyager/middleware'
 import { createQueueDBContext, destroyQueueDBContext } from '../../graphql/v1/queue'
-import NLPSchema from '../../graphql/v1/NLPSchema'
+import NLPSchema from '../../graphql/NLPSchema'
 import FBAdapter from '../../database/FBAdapter'
 
 let nlpSchema = new NLPSchema(new FBAdapter())

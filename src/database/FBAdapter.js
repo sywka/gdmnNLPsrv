@@ -1,6 +1,6 @@
 import NestHydrationJS from 'nesthydrationjs'
 import * as dbHelper from './dbHelper'
-import NLPSchema from '../graphql/v1/NLPSchema'
+import NLPSchema from '../graphql/NLPSchema'
 
 export default class FBAdapter {
 
@@ -42,6 +42,9 @@ export default class FBAdapter {
     const result = await dbHelper.query(context.db, `
       SELECT
         TRIM(r.rdb$relation_name)                          AS "tableName",
+        CAST(TRIM(rlf.rdb$relation_name) 
+          || '_' || TRIM(rlf.rdb$field_name) 
+          AS VARCHAR(62))                                  AS "fieldKey",
         TRIM(rlf.rdb$field_name)                           AS "fieldName",
         f.rdb$field_type                                   AS "fieldType",
         f.rdb$null_flag                                    AS "nullFlag",
@@ -104,7 +107,8 @@ export default class FBAdapter {
         key: 'tableIndexName'
       }],
       fields: [{
-        name: {column: 'fieldName', id: true},
+        id: {column: 'fieldKey', id: true},
+        name: 'fieldName',
         indices: [{
           key: 'fieldIndexName'
         }],

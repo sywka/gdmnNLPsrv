@@ -11,8 +11,8 @@ import GraphQLDate from 'graphql-date'
 
 export default class NLPSchema {
 
-  static TYPE_STRING = 'TYPE_STRING'
   static TYPE_BOOLEAN = 'TYPE_BOOLEAN'
+  static TYPE_STRING = 'TYPE_STRING'
   static TYPE_INT = 'TYPE_INT'
   static TYPE_FLOAT = 'TYPE_FLOAT'
   static TYPE_DATE = 'TYPE_DATE'
@@ -39,10 +39,10 @@ export default class NLPSchema {
   }
 
   static _indicesToStr (indices) {
-    return indices.reduce((prev, cur, index) => {
-      if (index) prev += ','
-      prev += cur.key
-      return prev
+    return indices.reduce((strOfIndices, index, i) => {
+      if (i) strOfIndices += ','
+      strOfIndices += index.key
+      return strOfIndices
     }, '')
   }
 
@@ -62,27 +62,11 @@ export default class NLPSchema {
     try {
       context.db = await this._adapter.connectToDB()
       context.tables = await this._adapter.getTables(context)
-
-      let queryFields = {}
-      for (let i = 0; i < context.tables.length; i++) {
-        const table = context.tables[i]
-        queryFields[NLPSchema._escape(table.name)] = {
-          type: await this._createType(context, table),
-          description: NLPSchema._indicesToStr(table.indices)
-        }
-      }
-
-      return this._schema = new GraphQLSchema({
-        query: new GraphQLObjectType({
-          name: 'Tables',
-          fields: () => queryFields
-        })
-      })
+      return this._schema = this._createSchema(context)
     } finally {
       try {
         if (context.db) {
-          await
-            this._adapter.disconnectFromDB(context)
+          await this._adapter.disconnectFromDB(context)
         }
       } catch (error) {
         console.log(error)
@@ -90,37 +74,48 @@ export default class NLPSchema {
     }
   }
 
-  async _createType (context, table) {
+  _createSchema (context) {
+    return new GraphQLSchema({
+      query: new GraphQLObjectType({
+        name: 'Tables',
+        fields: () => context.tables.reduce((fields, table) => {
+          fields[NLPSchema._escape(table.name)] = {
+            type: this._createType(context, table),
+            description: NLPSchema._indicesToStr(table.indices)
+          }
+          return fields
+        }, {})
+      })
+    })
+  }
+
+  _createType (context, table) {
     const duplicate = context.types.find(type => type.name === NLPSchema._escape(table.name))
     if (duplicate) return duplicate
 
-    let tableFieldsTypes = {}
     const type = new GraphQLObjectType({
       name: NLPSchema._escape(table.name),
       description: NLPSchema._indicesToStr(table.indices),
-      fields: tableFieldsTypes
+      fields: () => table.fields.reduce((fields, tableField) => {
+        console.log(`${table.name}(${tableField.name}) to ${tableField.nameRef}`)
+
+        let fieldType
+        if (tableField.nameRef) {
+          const tableRef = context.tables.find((table) => table.name === tableField.nameRef)
+          fieldType = this._createLinkType(context, this._createType(context, tableRef))
+        } else {
+          fieldType = NLPSchema._convertToGraphQLType(tableField.type)
+        }
+
+        if (tableField.nullable) fieldType = new GraphQLNonNull(fieldType)
+        fields[NLPSchema._escape(tableField.name)] = {
+          type: fieldType,
+          description: NLPSchema._indicesToStr(tableField.indices)
+        }
+        return fields
+      }, {})
     })
     context.types.push(type)
-
-    for (let i = 0; i < table.fields.length; i++) {
-      const field = table.fields[i]
-      console.log(`${table.name}(${field.name}) to ${field.nameRef}`)
-
-      let fieldType
-      if (field.nameRef) {
-        const tableRef = context.tables.find((table) => table.name === field.nameRef)
-        fieldType = this._createLinkType(context, await this._createType(context, tableRef))
-      } else {
-        fieldType = NLPSchema._convertToGraphQLType(field.type)
-      }
-
-      if (field.nullable) fieldType = new GraphQLNonNull(fieldType)
-      tableFieldsTypes[NLPSchema._escape(field.name)] = {
-        type: fieldType,
-        description: NLPSchema._indicesToStr(field.indices)
-      }
-    }
-
     return type
   }
 
