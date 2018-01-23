@@ -106,20 +106,23 @@ export class NLPSchema<Database> {
                 console.log(`${table.name}(${tableField.name}) to ${tableField.nameRef}`);
 
                 let fieldType: GraphQLType;
+                let fieldDescription: string;
                 if (tableField.nameRef) {
                     const tableRef: Table = context.tables.find((table) => table.name === tableField.nameRef);
                     if (!tableRef) return fields;
 
                     fieldType = new GraphQLList(this._createType(context, tableRef));
+                    fieldDescription = tableField.refs.length ? NLPSchema._indicesToStr(tableField.refs[0].indices) : '';
                 } else {
                     fieldType = NLPSchema._convertToGraphQLType(tableField.type);
+                    fieldDescription = NLPSchema._indicesToStr(tableField.indices);
                     fields = {...fields, ...this._createEmulatedLinkFields(context, table, tableField)};
                 }
 
                 if (tableField.nonNull) fieldType = new GraphQLNonNull(fieldType);
                 fields[NLPSchema._escape(tableField.name)] = {
                     type: fieldType,
-                    description: NLPSchema._indicesToStr(tableField.indices)
+                    description: fieldDescription
                 };
                 return fields;
             }, {})
