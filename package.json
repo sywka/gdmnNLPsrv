@@ -3,9 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "devServer": "babel-node ./src/server.js",
-    "prodServer": "yarn run build&&set NODE_ENV=production&&node ./dist/server.js",
-    "build": "babel ./src -d ./dist",
+    "devServer": "yarn run build&&node ./src/server.js",
+    "prodServer": "yarn run build&&set NODE_ENV=production&&node ./src/server.js",
+    "build": "tsc",
     "start": "yarn run prodServer",
     "startPM2Server": "pm2 start prod.config.pm2.json",
     "stopPM2Server": "pm2 delete prod.config.pm2.json",
@@ -30,31 +30,19 @@
     "path": "^0.12.7",
     "pm2": "^2.9.1",
     "promise-queue": "^2.2.3",
-    "pug": "^2.0.0-rc.4"
+    "pug": "^2.0.0-rc.4",
+    "typescript": "^2.6.2"
   },
   "devDependencies": {
-    "babel-cli": "^6.26.0",
-    "babel-plugin-transform-builtin-extend": "^1.1.2",
-    "babel-plugin-transform-es2015-destructuring": "^6.23.0",
-    "babel-plugin-transform-es2015-modules-commonjs": "^6.26.0",
-    "babel-preset-stage-0": "^6.24.1"
-  },
-  "babel": {
-    "presets": [
-      "stage-0"
-    ],
-    "plugins": [
-      "transform-es2015-destructuring",
-      "transform-es2015-modules-commonjs",
-      [
-        "babel-plugin-transform-builtin-extend",
-        {
-          "globals": [
-            "Error",
-            "Array"
-          ]
-        }
-      ]
-    ]
+    "@types/config": "^0.0.33",
+    "@types/cookie-parser": "^1.4.1",
+    "@types/cors": "^2.8.3",
+    "@types/express": "^4.11.0",
+    "@types/express-graphql": "^0.0.35",
+    "@types/graphql": "^0.12.1",
+    "@types/graphql-date": "^1.0.2",
+    "@types/hapi": "^16.1.12",
+    "@types/koa": "^2.0.43",
+    "@types/morgan": "^1.7.35"
   }
 }

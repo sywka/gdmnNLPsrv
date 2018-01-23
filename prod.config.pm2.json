@@ -1,6 +1,6 @@
 {
   "name": "gdmnTASrv",
-  "script": "./dist/server.js",
+  "script": "./src/server.js",
   "node_args": [],
   "log_date_format": "DD-MM-YYYY HH:mm:ss Z",
   "min_uptime": "60s",

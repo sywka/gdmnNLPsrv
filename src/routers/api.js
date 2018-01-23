@@ -1,13 +1,12 @@
-import express from 'express'
-import { CodeError, HttpError, JSON, NOT_FOUND_ERROR_CODE } from '../middlewares/errorMiddleware'
-import apiV1 from './v1/api'
-
-let router = express.Router()
-
-router.use('/v1', apiV1)
-
-router.use('/*', (req, res, next) => {
-  next(new HttpError(JSON, 501, new CodeError(NOT_FOUND_ERROR_CODE, 'Not implemented yet')))
-})
-
-export default router
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+var express = require("express");
+var errorMiddleware_1 = require("../middlewares/errorMiddleware");
+var api_1 = require("./v1/api");
+var router = express.Router();
+router.use('/v1', api_1.default);
+router.use('/*', function (req, res, next) {
+    next(new errorMiddleware_1.HttpError(errorMiddleware_1.JSON, 501, new errorMiddleware_1.CodeError(errorMiddleware_1.NOT_FOUND_ERROR_CODE, 'Not implemented yet')));
+});
+exports.default = router;
+//# sourceMappingURL=api.js.map
