@@ -2,6 +2,7 @@ import {
   GraphQLBoolean,
   GraphQLFloat,
   GraphQLInt,
+  GraphQLList,
   GraphQLNonNull,
   GraphQLObjectType,
   GraphQLSchema,
@@ -61,7 +62,7 @@ export default class NLPSchema {
   async getSchema () {
     if (this._schema) return this._schema
 
-    const context = {db: null, tables: [], types: [], links: []}
+    const context = {db: null, tables: [], types: []}
     try {
       context.db = await this._adapter.connectToDB()
       context.tables = await this._adapter.getTables(context)
@@ -83,7 +84,7 @@ export default class NLPSchema {
         name: 'Tables',
         fields: () => context.tables.reduce((fields, table) => {
           fields[NLPSchema._escape(table.name)] = {
-            type: this._createType(context, table),
+            type: new GraphQLNonNull(new GraphQLList(this._createType(context, table))),
             description: NLPSchema._indicesToStr(table.indices)
           }
           return fields
@@ -107,7 +108,7 @@ export default class NLPSchema {
           const tableRef = context.tables.find((table) => table.name === tableField.nameRef)
           if (!tableRef) return fields
 
-          fieldType = this._createLinkType(context, this._createType(context, tableRef))
+          fieldType = new GraphQLList(this._createType(context, tableRef))
         } else {
           fieldType = NLPSchema._convertToGraphQLType(tableField.type)
           fields = {...fields, ...this._createEmulatedLinkFields(context, table, tableField)}
@@ -145,22 +146,5 @@ export default class NLPSchema {
       }
       return fields
     }, {})
-  }
-
-  _createLinkType (context, type) {
-    return type
-    console.log(type.name)
-    const name = `LINK_TO_${type.name}`
-    let link = context.links.find((link) => link.name === name)
-    if (!link) {
-      link = new GraphQLObjectType({
-        name: name,
-        fields: () => ({
-          link: {type}
-        })
-      })
-      context.links.push(link)
-    }
-    return link
   }
 }
