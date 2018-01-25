@@ -11,17 +11,19 @@ import {
     GraphQLString
 } from 'graphql';
 import * as GraphQLDate from 'graphql-date';
-import {GraphQLType} from "graphql/type/definition";
+import {GraphQLFieldResolver, GraphQLType} from "graphql/type/definition";
 
 export class NLPSchema<Database> {
 
     protected schema: GraphQLSchema;
     protected adapter: Adapter<Database>;
+    protected linkCoder: (table: Table, field: Field) => string;
     protected emulatedLinkCoder: (table: Table, field: Field, ref: Ref) => string;
     protected emulatedEntityCoder: (table: Table, field: Field, ref: Ref) => string;
 
     constructor(options: Options<Database>) {
         this.adapter = options.adapter;
+        this.linkCoder = options.linkCoder || ((table, field) => `LINK_${field.name}`);
         this.emulatedLinkCoder = options.emulatedLinkCoder || ((table, field, ref) => `EMULATED_LINK_${ref.id}`);
         this.emulatedEntityCoder = options.emulatedEntityCoder || ((table, field, ref) => `EMULATED_${table.name}_${ref.id}`);
 
@@ -56,6 +58,12 @@ export class NLPSchema<Database> {
         return str.replace(/\$/g, '__');
     }
 
+    private static _findPrimaryFieldName(table: Table): string {
+        const field = table.fields.find((field) => field.primary);
+        if (field) return field.name;
+        return '';
+    }
+
     public async recreateSchema(): Promise<GraphQLSchema> {
         this.schema = null;
         return await this.getSchema()
@@ -87,7 +95,8 @@ export class NLPSchema<Database> {
                 fields: () => context.tables.reduce((fields, table) => {
                     fields[NLPSchema._escape(table.name)] = {
                         type: new GraphQLNonNull(new GraphQLList(this._createType(context, table))),
-                        description: NLPSchema._indicesToStr(table.indices)
+                        description: NLPSchema._indicesToStr(table.indices),
+                        resolve: this.adapter.resolve
                     };
                     return fields;
                 }, {})
@@ -101,61 +110,92 @@ export class NLPSchema<Database> {
 
         const type: GraphQLObjectType = new GraphQLObjectType({
             name: NLPSchema._escape(table.name),
+            sqlTable: table.name,
+            uniqueKey: NLPSchema._findPrimaryFieldName(table),
             description: NLPSchema._indicesToStr(table.indices),
-            fields: () => table.fields.reduce((fields, tableField) => {
-                console.log(`${table.name}(${tableField.name}) to ${tableField.nameRef}`);
-
-                let fieldType: GraphQLType;
-                let fieldDescription: string;
-                if (tableField.nameRef) {
-                    const tableRef: Table = context.tables.find((table) => table.name === tableField.nameRef);
-                    if (!tableRef) return fields;
-
-                    fieldType = new GraphQLList(this._createType(context, tableRef));
-                    fieldDescription = tableField.refs.length ? NLPSchema._indicesToStr(tableField.refs[0].indices) : '';
-                } else {
-                    fieldType = NLPSchema._convertToGraphQLType(tableField.type);
-                    fieldDescription = NLPSchema._indicesToStr(tableField.indices);
-                    fields = {...fields, ...this._createEmulatedLinkFields(context, table, tableField)};
-                }
-
-                if (tableField.nonNull) fieldType = new GraphQLNonNull(fieldType);
-                fields[NLPSchema._escape(tableField.name)] = {
-                    type: fieldType,
-                    description: fieldDescription
-                };
-                return fields;
-            }, {})
+            fields: () => {
+                const fields = this._createFields(context, table, table.fields);
+                const emulatedFields = this._createEmulatedFields(context, table, table.fields);
+                return {...fields, ...emulatedFields};
+            }
         });
         context.types.push(type);
         return type;
     }
 
     //TODO optimize (cache)
-    private _createEmulatedLinkFields(context: Context<Database>, table: Table, field: Field): GraphQLFieldMap<void, void> {
-        return field.refs.reduce((fields, ref) => {
-            fields[this.emulatedLinkCoder(table, field, ref)] = {
-                type: new GraphQLObjectType({
-                    name: this.emulatedEntityCoder(table, field, ref),
-                    description: ref.description,
-                    fields: () => table.fields.reduce((fields, tableField) => {
-                        if (tableField.refs.find((item) => item.id === ref.id)) {
-                            fields[NLPSchema._escape(tableField.name)] = {
-                                type: NLPSchema._convertToGraphQLType(tableField.type),
-                                description: NLPSchema._indicesToStr(tableField.indices)
+    private _createEmulatedFields(context: Context<Database>, table: Table, fields: Field[]): GraphQLFieldMap<void, void> {
+        return fields.reduce((fields, field) => {
+            let tmp = field.refs.reduce((fields, ref) => {
+                fields[this.emulatedLinkCoder(table, field, ref)] = {
+                    type: new GraphQLNonNull(
+                        new GraphQLObjectType({
+                            name: this.emulatedEntityCoder(table, field, ref),
+                            sqlTable: table.name,
+                            uniqueKey: NLPSchema._findPrimaryFieldName(table),
+                            description: ref.description,
+                            fields: () => {
+                                const refFields = table.fields.reduce((fields, field) => {
+                                    if (field.refs.find((item) => item.id === ref.id)) {
+                                        fields.push(field);
+                                    }
+                                    return fields;
+                                }, []);
+                                return this._createFields(context, table, refFields);
                             }
-                        }
-                        return fields;
-                    }, {})
-                }),
-                description: NLPSchema._indicesToStr(ref.indices)
+                        })
+                    ),
+                    description: NLPSchema._indicesToStr(ref.indices),
+                    sqlColumn: NLPSchema._findPrimaryFieldName(table),
+                    sqlJoin: (parentTable, joinTable, args) => (
+                        `${parentTable}.${NLPSchema._findPrimaryFieldName(table)}` +
+                        ` = ${joinTable}.${NLPSchema._findPrimaryFieldName(table)}`
+                    )
+                };
+                return fields;
+            }, {});
+
+            return {...fields, ...tmp};
+        }, {});
+    }
+
+    private _createFields(context: Context<Database>, table: Table, fields: Field[]) {
+        return fields.reduce((fields, field) => {
+            console.log(`${table.name}(${field.name}) to ${field.tableNameRef}`);
+
+            let fieldName: string;
+            let fieldType: GraphQLType;
+            let fieldDescription: string;
+            let sqlJoin;
+            if (field.tableNameRef) {
+                const tableRef: Table = context.tables.find((table) => table.name === field.tableNameRef);
+                if (!tableRef) return fields;
+
+                fieldName = NLPSchema._escape(this.linkCoder(table, field));
+                fieldType = new GraphQLList(this._createType(context, tableRef));
+                fieldDescription = field.refs.length ? NLPSchema._indicesToStr(field.refs[0].indices) : '';
+                sqlJoin = (parentTable, joinTable, args) => (
+                    `${parentTable}.${field.name} = ${joinTable}.${field.fieldNameRef}`
+                )
+            } else {
+                fieldName = NLPSchema._escape(field.name);
+                fieldType = NLPSchema._convertToGraphQLType(field.type);
+                fieldDescription = NLPSchema._indicesToStr(field.indices);
+            }
+
+            if (field.nonNull) fieldType = new GraphQLNonNull(fieldType);
+            fields[fieldName] = {
+                type: fieldType,
+                description: fieldDescription,
+                sqlColumn: field.name,
+                sqlJoin
             };
             return fields;
         }, {});
     }
 }
 
-type ID = number | string | void;
+type ID = number | string;
 
 export interface Index {
     readonly key: string;
@@ -170,10 +210,12 @@ export interface Ref {
 export interface Field {
     readonly id: ID;
     readonly name: string;
+    readonly primary: boolean;
     readonly indices: Index[];
     readonly type: NLPSchemaTypes;
     readonly nonNull: boolean;
-    readonly nameRef: string;
+    readonly tableNameRef: string;
+    readonly fieldNameRef: string;
     readonly refs: Ref[];
 }
 
@@ -188,10 +230,12 @@ export interface Adapter<DB> {
     connectToDB: () => Promise<DB>;
     disconnectFromDB: (context: Context<DB>) => Promise<void>;
     getTables: (context: Context<DB>) => Promise<Table[]>;
+    resolve: GraphQLFieldResolver<any, any, any>;
 }
 
 export interface Options<Database> {
     adapter: Adapter<Database>;
+    linkCoder?: (table: Table, field: Field) => string;
     emulatedLinkCoder?: (table: Table, field: Field, ref: Ref) => string;
     emulatedEntityCoder?: (table: Table, field: Field, ref: Ref) => string;
 }

@@ -1,6 +1,8 @@
 import * as NestHydrationJS from 'nesthydrationjs';
-import * as dbHelper from './dbHelper';
+import joinMonster from 'join-monster'
 import {Database} from "node-firebird";
+import {GraphQLResolveInfo} from "graphql/type/definition";
+import * as dbHelper from './dbHelper';
 import {Adapter, Context, NLPSchemaTypes, Table} from "../graphql/NLPSchema";
 
 export class FBAdapter implements Adapter<Database> {
@@ -38,25 +40,35 @@ export class FBAdapter implements Adapter<Database> {
     public async getTables(context: Context<Database>): Promise<Table[]> {
         const result: any[] = await dbHelper.query(context.db, `
           SELECT
-            TRIM(r.rdb$relation_name)                          AS "tableName",
-            CAST(TRIM(rlf.rdb$relation_name) 
-              || '_' || TRIM(rlf.rdb$field_name) 
-              AS VARCHAR(62))                                  AS "fieldKey",
-            TRIM(rlf.rdb$field_name)                           AS "fieldName",
-            f.rdb$field_type                                   AS "fieldType",
-            f.rdb$null_flag                                    AS "nullFlag",
-            TRIM(ref_rel_const.rdb$relation_name)              AS "relationName",
+            TRIM(r.rdb$relation_name)                                   AS "tableName",
+            TRIM(rlf.rdb$relation_name) 
+              || '_' || TRIM(rlf.rdb$field_name)                        AS "fieldKey",
+            TRIM(rlf.rdb$field_name)                                    AS "fieldName",
+            f.rdb$field_type                                            AS "fieldType",
+            IIF(constPrim.rdb$constraint_type = 'PRIMARY KEY', 1, null) AS "primaryFlag",
+            f.rdb$null_flag                                             AS "nullFlag",
+            TRIM(ref_rel_const.rdb$relation_name)                       AS "relationName",
+            seg.rdb$field_name                                          AS "relationFieldName",
             
-            TRIM(REPLACE(entities.usr$name,  ',', ''))         AS "tableIndexName",
-            TRIM(REPLACE(attr.usr$name,  ',', ''))             AS "fieldIndexName",
-            ref_type.id                                        AS "refKey",
-            ref_type.usr$description                           AS "refDescription",
-            TRIM(REPLACE(ref_type_detail.usr$name,  ',', ''))  AS "refTypeIndexName"
+            TRIM(REPLACE(entities.usr$name,  ',', ''))                  AS "tableIndexName",
+            TRIM(REPLACE(attr.usr$name,  ',', ''))                      AS "fieldIndexName",
+            ref_type.id                                                 AS "refKey",
+            ref_type.usr$description                                    AS "refDescription",
+            TRIM(REPLACE(ref_type_detail.usr$name,  ',', ''))           AS "refTypeIndexName"
             
           FROM rdb$relations r
           
             LEFT JOIN rdb$relation_fields rlf ON rlf.rdb$relation_name = r.rdb$relation_name
               LEFT JOIN rdb$fields f ON f.rdb$field_name = rlf.rdb$field_source
+              LEFT JOIN rdb$relation_constraints constPrim
+                ON constPrim.rdb$relation_name = rlf.rdb$relation_name
+                AND constPrim.rdb$constraint_type = 'PRIMARY KEY'
+                AND EXISTS(
+                  SELECT *
+                  FROM rdb$index_segments i
+                  WHERE i.rdb$field_name = rlf.rdb$field_name
+                    AND i.rdb$index_name = constPrim.rdb$index_name
+                )
               LEFT JOIN rdb$relation_constraints const
                 ON const.rdb$relation_name = rlf.rdb$relation_name
                 AND const.rdb$constraint_type = 'FOREIGN KEY'
@@ -70,6 +82,7 @@ export class FBAdapter implements Adapter<Database> {
                   ON ref_ref_const.rdb$constraint_name = const.rdb$constraint_name
                   LEFT JOIN rdb$relation_constraints ref_rel_const
                     ON ref_rel_const.rdb$constraint_name = ref_ref_const.rdb$const_name_uq
+                    LEFT JOIN rdb$index_segments seg ON seg.rdb$index_name = ref_rel_const.rdb$index_name
                     
             LEFT JOIN usr$nlp_table tables ON tables.usr$relation_name = r.rdb$relation_name
               LEFT JOIN usr$nlp_tentities entities
@@ -108,12 +121,14 @@ export class FBAdapter implements Adapter<Database> {
             fields: [{
                 id: {column: 'fieldKey', id: true},
                 name: 'fieldName',
+                primary: {column: 'primaryFlag', type: 'BOOLEAN', default: false},
                 indices: [{
                     key: 'fieldIndexName'
                 }],
                 type: {column: 'fieldType', type: FBAdapter._convertType},
                 nonNull: {column: 'nullFlag', type: 'BOOLEAN', default: false},
-                nameRef: 'relationName',
+                tableNameRef: 'relationName',
+                fieldNameRef: 'relationFieldName',
                 refs: [{
                     id: {column: 'refKey', type: 'NUMBER'},
                     description: 'refDescription',
@@ -125,5 +140,12 @@ export class FBAdapter implements Adapter<Database> {
         }];
 
         return NestHydrationJS().nest(result, definition);
+    }
+
+    async resolve(source: any, args: any, context: any, info: GraphQLResolveInfo) {
+        return joinMonster(info, {}, sql => {
+            console.log(sql);
+            return dbHelper.query(context.db, sql)
+        })
     }
 }
