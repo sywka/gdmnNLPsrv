@@ -7,7 +7,7 @@ import {FBAdapter} from '../../database/FBAdapter'
 
 let nlpSchema = new NLPSchema({
     adapter: new FBAdapter(),
-    emulatedLinkCoder: (table, field, ref) => `LINK_${ref.id}`,
+    emulatedLinkCoder: (table, field, ref) => `link_${ref.id}`,
     emulatedEntityCoder: (table, field, ref) => `EMULATED_${table.name}_${ref.id}`
 });
 

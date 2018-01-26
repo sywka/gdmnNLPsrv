@@ -2,6 +2,7 @@ import {
     GraphQLBoolean,
     GraphQLFieldMap,
     GraphQLFloat,
+    GraphQLInputObjectType,
     GraphQLInt,
     GraphQLList,
     GraphQLNonNull,
@@ -23,8 +24,8 @@ export class NLPSchema<Database> {
 
     constructor(options: Options<Database>) {
         this.adapter = options.adapter;
-        this.linkCoder = options.linkCoder || ((table, field) => `LINK_${field.name}`);
-        this.emulatedLinkCoder = options.emulatedLinkCoder || ((table, field, ref) => `EMULATED_LINK_${ref.id}`);
+        this.linkCoder = options.linkCoder || ((table, field) => `link_${field.name}`);
+        this.emulatedLinkCoder = options.emulatedLinkCoder || ((table, field, ref) => `link_${ref.id}`);
         this.emulatedEntityCoder = options.emulatedEntityCoder || ((table, field, ref) => `EMULATED_${table.name}_${ref.id}`);
 
         this.getSchema().catch(console.log); //tmp
@@ -64,6 +65,32 @@ export class NLPSchema<Database> {
         return '';
     }
 
+    private static _createSQLWhere(tableAlias: string, where: any) {
+        if (!where) return '';
+
+        let sqlCondition: string = '';
+        if (where.equals) {
+            let equals: string = '';
+            for (let propName in where.equals) {
+                const value: string = where.equals[propName];
+                equals += `${sqlCondition ? ' AND ' : ''}${tableAlias}."${propName}" = '${value}'`;
+            }
+            if (equals) sqlCondition += `(${equals})`
+        }
+        if (where.or) {
+            const or = where.or.reduce((condition, item, index, array) => {
+                if (index) condition += ' OR ';
+                condition += NLPSchema._createSQLWhere(tableAlias, item);
+                return condition;
+            }, '');
+            if (or) {
+                if (sqlCondition) sqlCondition += ' AND ';
+                sqlCondition += `(${or})`;
+            }
+        }
+        return sqlCondition;
+    }
+
     public async recreateSchema(): Promise<GraphQLSchema> {
         this.schema = null;
         return await this.getSchema()
@@ -95,13 +122,40 @@ export class NLPSchema<Database> {
                 fields: () => context.tables.reduce((fields, table) => {
                     fields[NLPSchema._escape(table.name)] = {
                         type: new GraphQLNonNull(new GraphQLList(this._createType(context, table))),
+                        args: {
+                            where: {type: this._createFilterInputType(context, table)}
+                        },
                         description: NLPSchema._indicesToStr(table.indices),
+                        where: (tableAlias, args, context, sqlASTNode) => NLPSchema._createSQLWhere(tableAlias, args.where),
                         resolve: this.adapter.resolve
                     };
                     return fields;
                 }, {})
             })
         });
+    }
+
+    private _createFilterInputType(context: Context<Database>, table: Table): GraphQLInputObjectType {
+        const filterType = new GraphQLInputObjectType({
+            name: `FILTER_${table.name}`,
+            fields: () => ({
+                equals: {
+                    type: new GraphQLInputObjectType({
+                        name: `EQUALS_${table.name}`,
+                        fields: () => table.fields.reduce((fields, field) => {
+                            if (!field.tableNameRef) {
+                                fields[field.name] = {
+                                    type: NLPSchema._convertToGraphQLType(field.type)
+                                };
+                            }
+                            return fields;
+                        }, {})
+                    })
+                },
+                or: {type: new GraphQLList(filterType)}
+            })
+        });
+        return filterType;
     }
 
     private _createType(context: Context<Database>, table: Table): GraphQLObjectType {
@@ -148,8 +202,8 @@ export class NLPSchema<Database> {
                     description: NLPSchema._indicesToStr(ref.indices),
                     sqlColumn: NLPSchema._findPrimaryFieldName(table),
                     sqlJoin: (parentTable, joinTable, args) => (
-                        `${parentTable}.${NLPSchema._findPrimaryFieldName(table)}` +
-                        ` = ${joinTable}.${NLPSchema._findPrimaryFieldName(table)}`
+                        `${parentTable}."${NLPSchema._findPrimaryFieldName(table)}"` +
+                        ` = ${joinTable}."${NLPSchema._findPrimaryFieldName(table)}"`
                     )
                 };
                 return fields;
@@ -175,7 +229,7 @@ export class NLPSchema<Database> {
                 fieldType = new GraphQLList(this._createType(context, tableRef));
                 fieldDescription = field.refs.length ? NLPSchema._indicesToStr(field.refs[0].indices) : '';
                 sqlJoin = (parentTable, joinTable, args) => (
-                    `${parentTable}.${field.name} = ${joinTable}.${field.fieldNameRef}`
+                    `${parentTable}."${field.name}" = ${joinTable}."${field.fieldNameRef}"`
                 )
             } else {
                 fieldName = NLPSchema._escape(field.name);

@@ -48,7 +48,7 @@ export class FBAdapter implements Adapter<Database> {
             IIF(constPrim.rdb$constraint_type = 'PRIMARY KEY', 1, null) AS "primaryFlag",
             f.rdb$null_flag                                             AS "nullFlag",
             TRIM(ref_rel_const.rdb$relation_name)                       AS "relationName",
-            seg.rdb$field_name                                          AS "relationFieldName",
+            TRIM(seg.rdb$field_name)                                    AS "relationFieldName",
             
             TRIM(REPLACE(entities.usr$name,  ',', ''))                  AS "tableIndexName",
             TRIM(REPLACE(attr.usr$name,  ',', ''))                      AS "fieldIndexName",
