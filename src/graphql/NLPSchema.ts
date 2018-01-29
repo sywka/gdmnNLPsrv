@@ -73,7 +73,7 @@ export class NLPSchema<Database> {
     public async getSchema(): Promise<GraphQLSchema> {
         if (this.schema) return this.schema;
 
-        const context: Context<Database> = {db: null, tables: [], types: []};
+        const context: Context<Database> = {db: null, tables: [], types: [], inputTypes: []};
         try {
             context.db = await this.adapter.connectToDB();
             context.tables = await this.adapter.getTables(context);
@@ -134,10 +134,10 @@ export class NLPSchema<Database> {
                 fields: () => context.tables.reduce((fields, table) => {
                     fields[NLPSchema._escape(table.name)] = {
                         type: new GraphQLNonNull(new GraphQLList(this._createType(context, table))),
+                        description: NLPSchema._indicesToStr(table.indices),
                         args: {
                             where: {type: this._createFilterInputType(context, table)}
                         },
-                        description: NLPSchema._indicesToStr(table.indices),
                         where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where),
                         resolve: this.adapter.resolve
                     };
@@ -148,8 +148,13 @@ export class NLPSchema<Database> {
     }
 
     private _createFilterInputType(context: Context<Database>, table: Table): GraphQLInputObjectType {
-        const filterType = new GraphQLInputObjectType({
-            name: `FILTER_${table.name}`,
+        const duplicate: GraphQLInputObjectType = context.inputTypes.find(type => (
+            type.name === `FILTER_${NLPSchema._escape(table.name)}`
+        ));
+        if (duplicate) return duplicate;
+
+        const inputType = new GraphQLInputObjectType({
+            name: `FILTER_${NLPSchema._escape(table.name)}`,
             fields: () => ({
                 [FilterTypes.TYPE_EQUALS]: {
                     type: new GraphQLInputObjectType({
@@ -195,11 +200,12 @@ export class NLPSchema<Database> {
                         }, {})
                     })
                 },
-                or: {type: new GraphQLList(filterType)},
-                and: {type: new GraphQLList(filterType)}
+                or: {type: new GraphQLList(inputType)},
+                and: {type: new GraphQLList(inputType)}
             })
         });
-        return filterType;
+        context.inputTypes.push(inputType);
+        return inputType;
     }
 
     private _createType(context: Context<Database>, table: Table): GraphQLObjectType {
@@ -285,8 +291,12 @@ export class NLPSchema<Database> {
             fields[fieldName] = {
                 type: fieldType,
                 description: fieldDescription,
+                args: {
+                    where: {type: this._createFilterInputType(context, table)}
+                },
                 sqlColumn: field.name,
-                sqlJoin
+                sqlJoin,
+                where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where),
             };
             return fields;
         }, {});
@@ -343,6 +353,7 @@ export interface Context<DB> {
     db: DB;
     tables: Table[];
     types: GraphQLObjectType[];
+    inputTypes: GraphQLInputObjectType[];
 }
 
 export enum NLPSchemaTypes {
