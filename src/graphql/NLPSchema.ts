@@ -65,32 +65,6 @@ export class NLPSchema<Database> {
         return '';
     }
 
-    private static _createSQLWhere(tableAlias: string, where: any) {
-        if (!where) return '';
-
-        let sqlCondition: string = '';
-        if (where.equals) {
-            let equals: string = '';
-            for (let propName in where.equals) {
-                const value: string = where.equals[propName];
-                equals += `${sqlCondition ? ' AND ' : ''}${tableAlias}."${propName}" = '${value}'`;
-            }
-            if (equals) sqlCondition += `(${equals})`
-        }
-        if (where.or) {
-            const or = where.or.reduce((condition, item, index, array) => {
-                if (index) condition += ' OR ';
-                condition += NLPSchema._createSQLWhere(tableAlias, item);
-                return condition;
-            }, '');
-            if (or) {
-                if (sqlCondition) sqlCondition += ' AND ';
-                sqlCondition += `(${or})`;
-            }
-        }
-        return sqlCondition;
-    }
-
     public async recreateSchema(): Promise<GraphQLSchema> {
         this.schema = null;
         return await this.getSchema()
@@ -115,6 +89,50 @@ export class NLPSchema<Database> {
         }
     }
 
+    private _createSQLWhere(tableAlias: string, where: any): string {
+        if (!where) return '';
+
+        let sqlCondition: string = Object.keys(where).reduce((sqlConditions, filterName) => {
+            if (filterName === 'or') return sqlConditions;
+
+            const filter: any = where[filterName];
+
+            let condition = Object.keys(filter).reduce((sqlConditions, fieldName) => {
+                const value: any = filter[fieldName];
+                const condition = this.adapter.createSQLCondition(
+                    filterName as FilterTypes,
+                    `${tableAlias}."${fieldName}"`,
+                    value
+                );
+                if (condition) {
+                    if (sqlConditions) sqlConditions += ' AND ';
+                    sqlConditions += condition;
+                }
+                return sqlConditions;
+            }, '');
+
+            if (condition) {
+                condition = `(${condition})`;
+                sqlConditions += `${sqlConditions ? ' AND ' : ''}${condition}`;
+            }
+
+            return sqlConditions;
+        }, '');
+
+        if (where.or) {
+            const or = where.or.reduce((condition, item, index, array) => {
+                if (index) condition += ' OR ';
+                condition += this._createSQLWhere(tableAlias, item);
+                return condition;
+            }, '');
+            if (or) {
+                if (sqlCondition) sqlCondition += ' AND ';
+                sqlCondition += `(${or})`;
+            }
+        }
+        return sqlCondition;
+    }
+
     private _createSchema(context: Context<Database>): GraphQLSchema {
         return new GraphQLSchema({
             query: new GraphQLObjectType({
@@ -126,7 +144,7 @@ export class NLPSchema<Database> {
                             where: {type: this._createFilterInputType(context, table)}
                         },
                         description: NLPSchema._indicesToStr(table.indices),
-                        where: (tableAlias, args, context, sqlASTNode) => NLPSchema._createSQLWhere(tableAlias, args.where),
+                        where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where),
                         resolve: this.adapter.resolve
                     };
                     return fields;
@@ -139,20 +157,52 @@ export class NLPSchema<Database> {
         const filterType = new GraphQLInputObjectType({
             name: `FILTER_${table.name}`,
             fields: () => ({
-                equals: {
+                [FilterTypes.TYPE_EQUALS]: {
                     type: new GraphQLInputObjectType({
                         name: `EQUALS_${table.name}`,
                         fields: () => table.fields.reduce((fields, field) => {
                             if (!field.tableNameRef) {
-                                fields[field.name] = {
-                                    type: NLPSchema._convertToGraphQLType(field.type)
-                                };
+                                fields[field.name] = {type: NLPSchema._convertToGraphQLType(field.type)};
                             }
                             return fields;
                         }, {})
                     })
                 },
-                or: {type: new GraphQLList(filterType)}
+                [FilterTypes.TYPE_NOT_EQUALS]: {
+                    type: new GraphQLInputObjectType({
+                        name: `NOT_EQUALS_${table.name}`,
+                        fields: () => table.fields.reduce((fields, field) => {
+                            if (!field.tableNameRef) {
+                                fields[field.name] = {type: NLPSchema._convertToGraphQLType(field.type)};
+                            }
+                            return fields;
+                        }, {})
+                    })
+                },
+                [FilterTypes.TYPE_CONTAINS]: {
+                    type: new GraphQLInputObjectType({
+                        name: `CONTAINS_${table.name}`,
+                        fields: () => table.fields.reduce((fields, field) => {
+                            if (!field.tableNameRef && field.type === NLPSchemaTypes.TYPE_STRING) {
+                                fields[field.name] = {type: NLPSchema._convertToGraphQLType(field.type)};
+                            }
+                            return fields;
+                        }, {})
+                    })
+                },
+                [FilterTypes.TYPE_NOT_CONTAINS]: {
+                    type: new GraphQLInputObjectType({
+                        name: `NOT_CONTAINS_${table.name}`,
+                        fields: () => table.fields.reduce((fields, field) => {
+                            if (!field.tableNameRef && field.type === NLPSchemaTypes.TYPE_STRING) {
+                                fields[field.name] = {type: NLPSchema._convertToGraphQLType(field.type)};
+                            }
+                            return fields;
+                        }, {})
+                    })
+                },
+                or: {type: new GraphQLList(filterType)},
+                and: {type: new GraphQLList(filterType)}
             })
         });
         return filterType;
@@ -285,6 +335,7 @@ export interface Adapter<DB> {
     disconnectFromDB: (context: Context<DB>) => Promise<void>;
     getTables: (context: Context<DB>) => Promise<Table[]>;
     resolve: GraphQLFieldResolver<any, any, any>;
+    createSQLCondition: (type: FilterTypes, field: string, value: any) => string;
 }
 
 export interface Options<Database> {
@@ -302,4 +353,11 @@ export interface Context<DB> {
 
 export enum NLPSchemaTypes {
     TYPE_BOOLEAN, TYPE_STRING, TYPE_INT, TYPE_FLOAT, TYPE_DATE
+}
+
+export enum FilterTypes {
+    TYPE_EQUALS = 'equals',
+    TYPE_NOT_EQUALS = 'notEquals',
+    TYPE_CONTAINS = 'contains',
+    TYPE_NOT_CONTAINS = 'notContains'
 }

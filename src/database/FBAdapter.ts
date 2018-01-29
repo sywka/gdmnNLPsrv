@@ -3,7 +3,7 @@ import joinMonster from 'join-monster'
 import {Database} from "node-firebird";
 import {GraphQLResolveInfo} from "graphql/type/definition";
 import * as dbHelper from './dbHelper';
-import {Adapter, Context, NLPSchemaTypes, Table} from "../graphql/NLPSchema";
+import {Adapter, Context, FilterTypes, NLPSchemaTypes, Table} from "../graphql/NLPSchema";
 
 export class FBAdapter implements Adapter<Database> {
 
@@ -147,5 +147,22 @@ export class FBAdapter implements Adapter<Database> {
             console.log(sql);
             return dbHelper.query(context.db, sql)
         })
+    }
+
+    createSQLCondition(type: FilterTypes, field: string, value: any): string {
+        switch (type) {
+            case FilterTypes.TYPE_EQUALS:
+                if (value instanceof Date) return `CAST (${field} AS TIMESTAMP) = ${dbHelper.escape(value)}`;
+                return `${field} = ${dbHelper.escape(value)}`;
+            case FilterTypes.TYPE_NOT_EQUALS:
+                if (value instanceof Date) return `CAST (${field} AS TIMESTAMP) != ${dbHelper.escape(value)}`;
+                return `${field} = ${dbHelper.escape(value)}`;
+            case FilterTypes.TYPE_CONTAINS:
+                return `${field} CONTAINING ${dbHelper.escape(value)}`;
+            case FilterTypes.TYPE_NOT_CONTAINS:
+                return `${field} NOT CONTAINING ${dbHelper.escape(value)}`;
+            default:
+                return ''
+        }
     }
 }

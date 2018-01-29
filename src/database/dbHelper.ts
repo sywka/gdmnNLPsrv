@@ -16,7 +16,7 @@ export const options: firebird.Options = {
     database: path.resolve(process.cwd(), config.get('db.path'))
 };
 
-export function escape(value: string): string {
+export function escape(value: any): string {
     return firebird.escape(value)
 }
 
