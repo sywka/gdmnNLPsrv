@@ -92,45 +92,39 @@ export class NLPSchema<Database> {
     private _createSQLWhere(tableAlias: string, where: any): string {
         if (!where) return '';
 
-        let sqlCondition: string = Object.keys(where).reduce((sqlConditions, filterName) => {
-            if (filterName === 'or') return sqlConditions;
+        let groupsConditions = Object.keys(where).reduce((groupsConditions, filterName) => {
+            if (filterName === 'or') return groupsConditions;
 
             const filter: any = where[filterName];
-
-            let condition = Object.keys(filter).reduce((sqlConditions, fieldName) => {
+            let conditions = Object.keys(filter).reduce((conditions, fieldName) => {
                 const value: any = filter[fieldName];
                 const condition = this.adapter.createSQLCondition(
                     filterName as FilterTypes,
                     `${tableAlias}."${fieldName}"`,
                     value
                 );
-                if (condition) {
-                    if (sqlConditions) sqlConditions += ' AND ';
-                    sqlConditions += condition;
-                }
-                return sqlConditions;
-            }, '');
-
-            if (condition) {
-                condition = `(${condition})`;
-                sqlConditions += `${sqlConditions ? ' AND ' : ''}${condition}`;
-            }
-
-            return sqlConditions;
-        }, '');
+                if (condition) conditions.push(condition);
+                return conditions;
+            }, []);
+            if (conditions.length) groupsConditions.push(`(${conditions.join(' AND ')})`);
+            return groupsConditions;
+        }, []);
 
         if (where.or) {
-            const or = where.or.reduce((condition, item, index, array) => {
-                if (index) condition += ' OR ';
-                condition += this._createSQLWhere(tableAlias, item);
-                return condition;
-            }, '');
-            if (or) {
-                if (sqlCondition) sqlCondition += ' AND ';
-                sqlCondition += `(${or})`;
-            }
+            const or = where.or.reduce((conditions, item) => {
+                conditions.push(this._createSQLWhere(tableAlias, item));
+                return conditions;
+            }, []);
+            if (or.length) groupsConditions.push(`(${or.join(' OR ')})`);
         }
-        return sqlCondition;
+        if (where.and) {
+            const and = where.and.reduce((conditions, item) => {
+                conditions.push(this._createSQLWhere(tableAlias, item));
+                return conditions;
+            }, []);
+            if (and.length) groupsConditions.push(`(${and.join(' AND ')})`);
+        }
+        return groupsConditions.join(' AND ');
     }
 
     private _createSchema(context: Context<Database>): GraphQLSchema {
