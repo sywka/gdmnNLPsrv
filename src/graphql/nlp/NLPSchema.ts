@@ -150,7 +150,7 @@ export class NLPSchema<Database> {
                         description: NLPSchema._indicesToStr(table.indices),
                         args: {
                             where: {type: this._createFilterInputType(context, table)},
-                            order: {type: this._createSortingInputType(context, table)}
+                            order: {type: new GraphQLList(this._createSortingInputType(context, table))}
                         },
                         where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where),
                         orderBy: (args) => NLPSchema._createObjectOrderBy(args.order),
@@ -187,7 +187,7 @@ export class NLPSchema<Database> {
             })
         });
         context.inputTypes.push(inputType);
-        return new GraphQLList(inputType);
+        return inputType;
     }
 
     private _createFilterInputType(context: Context<Database>, table: Table): GraphQLInputObjectType {
@@ -307,7 +307,7 @@ export class NLPSchema<Database> {
                     description: NLPSchema._indicesToStr(ref.indices),
                     args: {
                         where: {type: this._createFilterInputType(context, table)},
-                        order: {type: this._createSortingInputType(context, table)}
+                        order: {type: new GraphQLList(this._createSortingInputType(context, table))}
                     },
                     sqlColumn: NLPSchema._findPrimaryFieldName(table),
                     sqlJoin: (parentTable, joinTable, args) => (
@@ -345,7 +345,7 @@ export class NLPSchema<Database> {
                 );
                 args = {
                     where: {type: this._createFilterInputType(context, tableRef)},
-                    order: {type: this._createSortingInputType(context, tableRef)}
+                    order: {type: new GraphQLList(this._createSortingInputType(context, tableRef))}
                 };
             } else {
                 fieldName = NLPSchema._escape(field.name);
