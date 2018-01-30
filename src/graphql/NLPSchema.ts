@@ -271,6 +271,7 @@ export class NLPSchema<Database> {
             let fieldType: GraphQLType;
             let fieldDescription: string;
             let sqlJoin;
+            let args;
             if (field.tableNameRef) {
                 const tableRef: Table = context.tables.find((table) => table.name === field.tableNameRef);
                 if (!tableRef) return fields;
@@ -280,7 +281,10 @@ export class NLPSchema<Database> {
                 fieldDescription = field.refs.length ? NLPSchema._indicesToStr(field.refs[0].indices) : '';
                 sqlJoin = (parentTable, joinTable, args) => (
                     `${parentTable}."${field.name}" = ${joinTable}."${field.fieldNameRef}"`
-                )
+                );
+                args = {
+                    where: {type: this._createFilterInputType(context, tableRef)}
+                };
             } else {
                 fieldName = NLPSchema._escape(field.name);
                 fieldType = NLPSchema._convertToGraphQLType(field.type);
@@ -291,9 +295,7 @@ export class NLPSchema<Database> {
             fields[fieldName] = {
                 type: fieldType,
                 description: fieldDescription,
-                args: {
-                    where: {type: this._createFilterInputType(context, table)}
-                },
+                args,
                 sqlColumn: field.name,
                 sqlJoin,
                 where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where),
