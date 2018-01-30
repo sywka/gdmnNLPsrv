@@ -19,14 +19,14 @@ export class NLPSchema<Database> {
     protected schema: GraphQLSchema;
     protected adapter: Adapter<Database>;
     protected linkCoder: (table: Table, field: Field) => string;
-    protected emulatedLinkCoder: (table: Table, field: Field, ref: Ref) => string;
-    protected emulatedEntityCoder: (table: Table, field: Field, ref: Ref) => string;
+    protected emulatedLinkCoder: (table: Table, ref: Ref) => string;
+    protected emulatedEntityCoder: (table: Table, ref: Ref) => string;
 
     constructor(options: Options<Database>) {
         this.adapter = options.adapter;
         this.linkCoder = options.linkCoder || ((table, field) => `link_${field.name}`);
-        this.emulatedLinkCoder = options.emulatedLinkCoder || ((table, field, ref) => `link_${ref.id}`);
-        this.emulatedEntityCoder = options.emulatedEntityCoder || ((table, field, ref) => `EMULATED_${table.name}_${ref.id}`);
+        this.emulatedLinkCoder = options.emulatedLinkCoder || ((table, ref) => `link_${ref.id}`);
+        this.emulatedEntityCoder = options.emulatedEntityCoder || ((table, ref) => `EMULATED_${table.name}_${ref.id}`);
 
         this.getSchema().catch(console.log); //tmp
     }
@@ -219,7 +219,7 @@ export class NLPSchema<Database> {
             description: NLPSchema._indicesToStr(table.indices),
             fields: () => {
                 const fields = this._createFields(context, table, table.fields);
-                const emulatedFields = this._createEmulatedFields(context, table, table.fields);
+                const emulatedFields = this._createEmulatedFields(context, table);
                 return {...fields, ...emulatedFields};
             }
         });
@@ -228,13 +228,13 @@ export class NLPSchema<Database> {
     }
 
     //TODO optimize (cache)
-    private _createEmulatedFields(context: Context<Database>, table: Table, fields: Field[]): GraphQLFieldMap<void, void> {
-        return fields.reduce((fields, field) => {
+    private _createEmulatedFields(context: Context<Database>, table: Table): GraphQLFieldMap<void, void> {
+        return table.fields.reduce((fields, field) => {
             let tmp = field.refs.reduce((fields, ref) => {
-                fields[this.emulatedLinkCoder(table, field, ref)] = {
+                fields[this.emulatedLinkCoder(table, ref)] = {
                     type: new GraphQLNonNull(
                         new GraphQLObjectType({
-                            name: this.emulatedEntityCoder(table, field, ref),
+                            name: this.emulatedEntityCoder(table, ref),
                             sqlTable: table.name,
                             uniqueKey: NLPSchema._findPrimaryFieldName(table),
                             description: ref.description,
@@ -250,11 +250,15 @@ export class NLPSchema<Database> {
                         })
                     ),
                     description: NLPSchema._indicesToStr(ref.indices),
+                    args: {
+                        where: {type: this._createFilterInputType(context, table)}
+                    },
                     sqlColumn: NLPSchema._findPrimaryFieldName(table),
                     sqlJoin: (parentTable, joinTable, args) => (
                         `${parentTable}."${NLPSchema._findPrimaryFieldName(table)}"` +
                         ` = ${joinTable}."${NLPSchema._findPrimaryFieldName(table)}"`
-                    )
+                    ),
+                    where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where)
                 };
                 return fields;
             }, {});
@@ -298,7 +302,7 @@ export class NLPSchema<Database> {
                 args,
                 sqlColumn: field.name,
                 sqlJoin,
-                where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where),
+                where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where)
             };
             return fields;
         }, {});
@@ -347,8 +351,8 @@ export interface Adapter<DB> {
 export interface Options<Database> {
     adapter: Adapter<Database>;
     linkCoder?: (table: Table, field: Field) => string;
-    emulatedLinkCoder?: (table: Table, field: Field, ref: Ref) => string;
-    emulatedEntityCoder?: (table: Table, field: Field, ref: Ref) => string;
+    emulatedLinkCoder?: (table: Table, ref: Ref) => string;
+    emulatedEntityCoder?: (table: Table, ref: Ref) => string;
 }
 
 export interface Context<DB> {

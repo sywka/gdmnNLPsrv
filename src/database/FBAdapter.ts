@@ -149,7 +149,7 @@ export class FBAdapter implements Adapter<Database> {
         })
     }
 
-    createSQLCondition(type: FilterTypes, field: string, value: any): string {
+    public createSQLCondition(type: FilterTypes, field: string, value: any): string {
         switch (type) {
             case FilterTypes.TYPE_EQUALS:
                 if (value instanceof Date) return `CAST (${field} AS TIMESTAMP) = ${dbHelper.escape(value)}`;

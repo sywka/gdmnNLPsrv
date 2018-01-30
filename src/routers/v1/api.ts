@@ -7,8 +7,8 @@ import {FBAdapter} from '../../database/FBAdapter'
 
 let nlpSchema = new NLPSchema({
     adapter: new FBAdapter(),
-    emulatedLinkCoder: (table, field, ref) => `link_${ref.id}`,
-    emulatedEntityCoder: (table, field, ref) => `EMULATED_${table.name}_${ref.id}`
+    emulatedLinkCoder: (table, ref) => `link_${ref.id}`,
+    emulatedEntityCoder: (table, ref) => `EMULATED_${table.name}_${ref.id}`
 });
 
 const router = express.Router();
@@ -21,17 +21,17 @@ router.use('/schema/viewer', (req, res, next) => {
 });
 
 router.use('/', graphqlHTTP(async (req) => {
-    const startTime = Date.now()
-    let context = await createQueueDBContext()
+    const startTime = Date.now();
+    let context = await createQueueDBContext();
     return {
         schema: await nlpSchema.getSchema(),
         graphiql: true,
         context: context,
         async extensions ({document, variables, operationName, result}) {
-            await destroyQueueDBContext(context)
-            return {runTime: (Date.now() - startTime) + ' мсек'}
+            await destroyQueueDBContext(context);
+            return {runTime: (Date.now() - startTime) + ' мсек'};
         }
     }
 }));
 
-export default router
+export default router;
