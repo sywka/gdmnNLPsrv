@@ -1,8 +1,8 @@
 import * as express from 'express'
 import * as graphqlHTTP from 'express-graphql'
-import { express as expressMiddleware } from 'graphql-voyager/middleware'
-import { createQueueDBContext, destroyQueueDBContext } from '../../graphql/v1/queue'
-import {NLPSchema} from '../../graphql/NLPSchema'
+import {express as expressMiddleware} from 'graphql-voyager/middleware'
+import {createQueueDBContext, destroyQueueDBContext} from '../../graphql/v1/queue'
+import {NLPSchema} from '../../graphql/nlp/NLPSchema'
 import {FBAdapter} from '../../database/FBAdapter'
 
 let nlpSchema = new NLPSchema({
@@ -27,7 +27,7 @@ router.use('/', graphqlHTTP(async (req) => {
         schema: await nlpSchema.getSchema(),
         graphiql: true,
         context: context,
-        async extensions ({document, variables, operationName, result}) {
+        async extensions({document, variables, operationName, result}) {
             await destroyQueueDBContext(context);
             return {runTime: (Date.now() - startTime) + ' мсек'};
         }

@@ -3,7 +3,8 @@ import joinMonster from 'join-monster'
 import {Database} from "node-firebird";
 import {GraphQLResolveInfo} from "graphql/type/definition";
 import * as dbHelper from './dbHelper';
-import {Adapter, Context, FilterTypes, NLPSchemaTypes, Table} from "../graphql/NLPSchema";
+import {FilterTypes, NLPSchemaTypes} from "../graphql/nlp/NLPSchema";
+import {Adapter, Context, Table} from "../graphql/nlp/types";
 
 export class FBAdapter implements Adapter<Database> {
 

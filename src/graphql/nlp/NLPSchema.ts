@@ -1,5 +1,6 @@
 import {
     GraphQLBoolean,
+    GraphQLEnumType,
     GraphQLFieldMap,
     GraphQLFloat,
     GraphQLInputObjectType,
@@ -12,7 +13,8 @@ import {
     GraphQLString
 } from 'graphql';
 import * as GraphQLDate from 'graphql-date';
-import {GraphQLFieldResolver, GraphQLType} from "graphql/type/definition";
+import {GraphQLType} from "graphql/type/definition";
+import {Adapter, Context, Field, Index, Options, Ref, Table} from "./types";
 
 export class NLPSchema<Database> {
 
@@ -63,6 +65,17 @@ export class NLPSchema<Database> {
         const field = table.fields.find((field) => field.primary);
         if (field) return field.name;
         return '';
+    }
+
+    private static _createObjectOrderBy(order: any[]): { [fieldName: string]: string } {
+        if (!order) return null;
+        return order.reduce((object, order) => {
+            const tmp = Object.keys(order).reduce((object, key) => {
+                object[order[key]] = key;
+                return object;
+            }, {});
+            return {...object, ...tmp};
+        }, {});
     }
 
     public async recreateSchema(): Promise<GraphQLSchema> {
@@ -136,15 +149,45 @@ export class NLPSchema<Database> {
                         type: new GraphQLNonNull(new GraphQLList(this._createType(context, table))),
                         description: NLPSchema._indicesToStr(table.indices),
                         args: {
-                            where: {type: this._createFilterInputType(context, table)}
+                            where: {type: this._createFilterInputType(context, table)},
+                            order: {type: this._createSortingInputType(context, table)}
                         },
                         where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where),
+                        orderBy: (args) => NLPSchema._createObjectOrderBy(args.order),
                         resolve: this.adapter.resolve
                     };
                     return fields;
                 }, {})
             })
         });
+    }
+
+    private _createSortingInputType(context: Context<Database>, table: Table) {
+        const duplicate: GraphQLInputObjectType = context.inputTypes.find(type => (
+            type.name === `SORTING_${NLPSchema._escape(table.name)}`
+        ));
+        if (duplicate) return duplicate;
+
+        const fieldsEnumType = new GraphQLEnumType({
+            name: `SORTING_FIELDS_${NLPSchema._escape(table.name)}`,
+            values: table.fields.reduce((values, field) => {
+                values[field.name] = {
+                    value: field.name,
+                    description: NLPSchema._indicesToStr(field.indices)
+                };
+                return values;
+            }, {})
+        });
+
+        const inputType = new GraphQLInputObjectType({
+            name: `SORTING_${NLPSchema._escape(table.name)}`,
+            fields: () => ({
+                asc: {type: fieldsEnumType},
+                desc: {type: fieldsEnumType}
+            })
+        });
+        context.inputTypes.push(inputType);
+        return new GraphQLList(inputType);
     }
 
     private _createFilterInputType(context: Context<Database>, table: Table): GraphQLInputObjectType {
@@ -161,7 +204,10 @@ export class NLPSchema<Database> {
                         name: `EQUALS_${table.name}`,
                         fields: () => table.fields.reduce((fields, field) => {
                             if (!field.tableNameRef) {
-                                fields[field.name] = {type: NLPSchema._convertToGraphQLType(field.type)};
+                                fields[field.name] = {
+                                    type: NLPSchema._convertToGraphQLType(field.type),
+                                    description: NLPSchema._indicesToStr(field.indices)
+                                };
                             }
                             return fields;
                         }, {})
@@ -172,7 +218,10 @@ export class NLPSchema<Database> {
                         name: `NOT_EQUALS_${table.name}`,
                         fields: () => table.fields.reduce((fields, field) => {
                             if (!field.tableNameRef) {
-                                fields[field.name] = {type: NLPSchema._convertToGraphQLType(field.type)};
+                                fields[field.name] = {
+                                    type: NLPSchema._convertToGraphQLType(field.type),
+                                    description: NLPSchema._indicesToStr(field.indices)
+                                };
                             }
                             return fields;
                         }, {})
@@ -183,7 +232,10 @@ export class NLPSchema<Database> {
                         name: `CONTAINS_${table.name}`,
                         fields: () => table.fields.reduce((fields, field) => {
                             if (!field.tableNameRef && field.type === NLPSchemaTypes.TYPE_STRING) {
-                                fields[field.name] = {type: NLPSchema._convertToGraphQLType(field.type)};
+                                fields[field.name] = {
+                                    type: NLPSchema._convertToGraphQLType(field.type),
+                                    description: NLPSchema._indicesToStr(field.indices)
+                                };
                             }
                             return fields;
                         }, {})
@@ -194,7 +246,10 @@ export class NLPSchema<Database> {
                         name: `NOT_CONTAINS_${table.name}`,
                         fields: () => table.fields.reduce((fields, field) => {
                             if (!field.tableNameRef && field.type === NLPSchemaTypes.TYPE_STRING) {
-                                fields[field.name] = {type: NLPSchema._convertToGraphQLType(field.type)};
+                                fields[field.name] = {
+                                    type: NLPSchema._convertToGraphQLType(field.type),
+                                    description: NLPSchema._indicesToStr(field.indices)
+                                };
                             }
                             return fields;
                         }, {})
@@ -251,14 +306,16 @@ export class NLPSchema<Database> {
                     ),
                     description: NLPSchema._indicesToStr(ref.indices),
                     args: {
-                        where: {type: this._createFilterInputType(context, table)}
+                        where: {type: this._createFilterInputType(context, table)},
+                        order: {type: this._createSortingInputType(context, table)}
                     },
                     sqlColumn: NLPSchema._findPrimaryFieldName(table),
                     sqlJoin: (parentTable, joinTable, args) => (
                         `${parentTable}."${NLPSchema._findPrimaryFieldName(table)}"` +
                         ` = ${joinTable}."${NLPSchema._findPrimaryFieldName(table)}"`
                     ),
-                    where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where)
+                    where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where),
+                    orderBy: (args) => NLPSchema._createObjectOrderBy(args.order)
                 };
                 return fields;
             }, {});
@@ -287,7 +344,8 @@ export class NLPSchema<Database> {
                     `${parentTable}."${field.name}" = ${joinTable}."${field.fieldNameRef}"`
                 );
                 args = {
-                    where: {type: this._createFilterInputType(context, tableRef)}
+                    where: {type: this._createFilterInputType(context, tableRef)},
+                    order: {type: this._createSortingInputType(context, tableRef)}
                 };
             } else {
                 fieldName = NLPSchema._escape(field.name);
@@ -295,71 +353,18 @@ export class NLPSchema<Database> {
                 fieldDescription = NLPSchema._indicesToStr(field.indices);
             }
 
-            if (field.nonNull) fieldType = new GraphQLNonNull(fieldType);
             fields[fieldName] = {
-                type: fieldType,
+                type: field.nonNull ? new GraphQLNonNull(fieldType) : fieldType,
                 description: fieldDescription,
                 args,
                 sqlColumn: field.name,
                 sqlJoin,
-                where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where)
+                where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where),
+                orderBy: (args) => NLPSchema._createObjectOrderBy(args.order)
             };
             return fields;
         }, {});
     }
-}
-
-type ID = number | string;
-
-export interface Index {
-    readonly key: string;
-}
-
-export interface Ref {
-    readonly id: ID;
-    readonly description: string;
-    readonly indices: Index[];
-}
-
-export interface Field {
-    readonly id: ID;
-    readonly name: string;
-    readonly primary: boolean;
-    readonly indices: Index[];
-    readonly type: NLPSchemaTypes;
-    readonly nonNull: boolean;
-    readonly tableNameRef: string;
-    readonly fieldNameRef: string;
-    readonly refs: Ref[];
-}
-
-export interface Table {
-    readonly id: ID;
-    readonly name: string;
-    readonly indices: Index[];
-    readonly fields: Field[];
-}
-
-export interface Adapter<DB> {
-    connectToDB: () => Promise<DB>;
-    disconnectFromDB: (context: Context<DB>) => Promise<void>;
-    getTables: (context: Context<DB>) => Promise<Table[]>;
-    resolve: GraphQLFieldResolver<any, any, any>;
-    createSQLCondition: (type: FilterTypes, field: string, value: any) => string;
-}
-
-export interface Options<Database> {
-    adapter: Adapter<Database>;
-    linkCoder?: (table: Table, field: Field) => string;
-    emulatedLinkCoder?: (table: Table, ref: Ref) => string;
-    emulatedEntityCoder?: (table: Table, ref: Ref) => string;
-}
-
-export interface Context<DB> {
-    db: DB;
-    tables: Table[];
-    types: GraphQLObjectType[];
-    inputTypes: GraphQLInputObjectType[];
 }
 
 export enum NLPSchemaTypes {
