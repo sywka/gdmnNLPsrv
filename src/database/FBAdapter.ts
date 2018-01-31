@@ -153,36 +153,23 @@ export class FBAdapter implements Adapter<Database> {
     public createSQLCondition(type: FilterTypes, field: string, value: Value): string {
         switch (type) {
             case FilterTypes.TYPE_EQUALS:
-                if (value instanceof Date) return `CAST (${field} AS TIMESTAMP) = ${dbHelper.escape(value)}`;
-                return `${field} = ${dbHelper.escape(value)}`;
-            case FilterTypes.TYPE_NOT_EQUALS:
-                if (value instanceof Date) return `CAST (${field} AS TIMESTAMP) != ${dbHelper.escape(value)}`;
-                return `${field} = ${dbHelper.escape(value)}`;
+                return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} = ${dbHelper.escape(value)}`;
 
             case FilterTypes.TYPE_CONTAINS:
                 return `${field} CONTAINING ${dbHelper.escape(value)}`;
-            case FilterTypes.TYPE_NOT_CONTAINS:
-                return `${field} NOT CONTAINING ${dbHelper.escape(value)}`;
             case FilterTypes.TYPE_BEGINS:
                 return `${field} STARTING WITH ${dbHelper.escape(value)}`;
-            case FilterTypes.TYPE_NOT_BEGINS:
-                return `${field} NOT STARTING WITH ${dbHelper.escape(value)}`;
             case FilterTypes.TYPE_ENDS:
                 return `REVERSE(${field}) STARTING WITH ${dbHelper.escape(value)}`;
-            case FilterTypes.TYPE_NOT_ENDS:
-                return `REVERSE(${field}) NOT STARTING WITH ${dbHelper.escape(value)}`;
 
             case FilterTypes.TYPE_GREATER:
-                if (value instanceof Date) return `CAST (${field} AS TIMESTAMP) > ${dbHelper.escape(value)}`;
-                return `${field} > ${dbHelper.escape(value)}`;
+                return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} > ${dbHelper.escape(value)}`;
             case FilterTypes.TYPE_LESS:
-                if (value instanceof Date) return `CAST (${field} AS TIMESTAMP) < ${dbHelper.escape(value)}`;
-                return `${field} < ${dbHelper.escape(value)}`;
+                return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} < ${dbHelper.escape(value)}`;
             default:
                 return ''
         }
     }
-
 
     quote(str: string): string {
         return `"${str}"`;

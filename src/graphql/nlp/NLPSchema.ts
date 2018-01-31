@@ -122,6 +122,13 @@ export class NLPSchema<Database> {
             return groupsConditions;
         }, []);
 
+        if (where.not) {
+            const not = where.not.reduce((conditions, item) => {
+                conditions.push(this._createSQLWhere(tableAlias, item));
+                return conditions;
+            }, []);
+            if (not.length) groupsConditions.push(`NOT (${not.join(' AND ')})`);
+        }
         if (where.or) {
             const or = where.or.reduce((conditions, item) => {
                 conditions.push(this._createSQLWhere(tableAlias, item));
@@ -213,37 +220,9 @@ export class NLPSchema<Database> {
                         }, {})
                     })
                 },
-                [FilterTypes.TYPE_NOT_EQUALS]: {
-                    type: new GraphQLInputObjectType({
-                        name: `NOT_EQUALS_${table.name}`,
-                        fields: () => table.fields.reduce((fields, field) => {
-                            if (!field.tableNameRef) {
-                                fields[field.name] = {
-                                    type: NLPSchema._convertToGraphQLType(field.type),
-                                    description: NLPSchema._indicesToStr(field.indices)
-                                };
-                            }
-                            return fields;
-                        }, {})
-                    })
-                },
                 [FilterTypes.TYPE_CONTAINS]: {
                     type: new GraphQLInputObjectType({
                         name: `CONTAINS_${table.name}`,
-                        fields: () => table.fields.reduce((fields, field) => {
-                            if (!field.tableNameRef && field.type === NLPSchemaTypes.TYPE_STRING) {
-                                fields[field.name] = {
-                                    type: NLPSchema._convertToGraphQLType(field.type),
-                                    description: NLPSchema._indicesToStr(field.indices)
-                                };
-                            }
-                            return fields;
-                        }, {})
-                    })
-                },
-                [FilterTypes.TYPE_NOT_CONTAINS]: {
-                    type: new GraphQLInputObjectType({
-                        name: `NOT_CONTAINS_${table.name}`,
                         fields: () => table.fields.reduce((fields, field) => {
                             if (!field.tableNameRef && field.type === NLPSchemaTypes.TYPE_STRING) {
                                 fields[field.name] = {
@@ -269,37 +248,9 @@ export class NLPSchema<Database> {
                         }, {})
                     })
                 },
-                [FilterTypes.TYPE_NOT_BEGINS]: {
-                    type: new GraphQLInputObjectType({
-                        name: `NOT_BEGINS_${table.name}`,
-                        fields: () => table.fields.reduce((fields, field) => {
-                            if (!field.tableNameRef && field.type === NLPSchemaTypes.TYPE_STRING) {
-                                fields[field.name] = {
-                                    type: NLPSchema._convertToGraphQLType(field.type),
-                                    description: NLPSchema._indicesToStr(field.indices)
-                                };
-                            }
-                            return fields;
-                        }, {})
-                    })
-                },
                 [FilterTypes.TYPE_ENDS]: {
                     type: new GraphQLInputObjectType({
                         name: `ENDS_${table.name}`,
-                        fields: () => table.fields.reduce((fields, field) => {
-                            if (!field.tableNameRef && field.type === NLPSchemaTypes.TYPE_STRING) {
-                                fields[field.name] = {
-                                    type: NLPSchema._convertToGraphQLType(field.type),
-                                    description: NLPSchema._indicesToStr(field.indices)
-                                };
-                            }
-                            return fields;
-                        }, {})
-                    })
-                },
-                [FilterTypes.TYPE_NOT_ENDS]: {
-                    type: new GraphQLInputObjectType({
-                        name: `NOT_ENDS_${table.name}`,
                         fields: () => table.fields.reduce((fields, field) => {
                             if (!field.tableNameRef && field.type === NLPSchemaTypes.TYPE_STRING) {
                                 fields[field.name] = {
@@ -340,7 +291,8 @@ export class NLPSchema<Database> {
                     })
                 },
                 or: {type: new GraphQLList(inputType)},
-                and: {type: new GraphQLList(inputType)}
+                and: {type: new GraphQLList(inputType)},
+                not: {type: new GraphQLList(inputType)}
             })
         });
         context.inputTypes.push(inputType);
@@ -457,14 +409,10 @@ export enum NLPSchemaTypes {
 
 export enum FilterTypes {
     TYPE_EQUALS = 'equals',
-    TYPE_NOT_EQUALS = 'notEquals',
 
     TYPE_CONTAINS = 'contains',
-    TYPE_NOT_CONTAINS = 'notContains',
     TYPE_BEGINS = 'begins',
-    TYPE_NOT_BEGINS = 'notBegins',
     TYPE_ENDS = 'ends',
-    TYPE_NOT_ENDS = 'notEnds',
 
     TYPE_GREATER = 'greater',
     TYPE_LESS = 'less'
