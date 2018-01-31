@@ -1,10 +1,10 @@
-import * as NestHydrationJS from 'nesthydrationjs';
-import joinMonster from 'join-monster'
+import * as NestHydrationJS from "nesthydrationjs";
+import joinMonster from "join-monster";
 import {Database} from "node-firebird";
 import {GraphQLResolveInfo} from "graphql/type/definition";
-import * as dbHelper from './dbHelper';
+import * as dbHelper from "./dbHelper";
 import {FilterTypes, NLPSchemaTypes} from "../graphql/nlp/NLPSchema";
-import {Adapter, Context, Table} from "../graphql/nlp/types";
+import {Adapter, Context, Table, Value} from "../graphql/nlp/types";
 
 export class FBAdapter implements Adapter<Database> {
 
@@ -150,7 +150,7 @@ export class FBAdapter implements Adapter<Database> {
         })
     }
 
-    public createSQLCondition(type: FilterTypes, field: string, value: any): string {
+    public createSQLCondition(type: FilterTypes, field: string, value: Value): string {
         switch (type) {
             case FilterTypes.TYPE_EQUALS:
                 if (value instanceof Date) return `CAST (${field} AS TIMESTAMP) = ${dbHelper.escape(value)}`;
@@ -158,12 +158,33 @@ export class FBAdapter implements Adapter<Database> {
             case FilterTypes.TYPE_NOT_EQUALS:
                 if (value instanceof Date) return `CAST (${field} AS TIMESTAMP) != ${dbHelper.escape(value)}`;
                 return `${field} = ${dbHelper.escape(value)}`;
+
             case FilterTypes.TYPE_CONTAINS:
                 return `${field} CONTAINING ${dbHelper.escape(value)}`;
             case FilterTypes.TYPE_NOT_CONTAINS:
                 return `${field} NOT CONTAINING ${dbHelper.escape(value)}`;
+            case FilterTypes.TYPE_BEGINS:
+                return `${field} STARTING WITH ${dbHelper.escape(value)}`;
+            case FilterTypes.TYPE_NOT_BEGINS:
+                return `${field} NOT STARTING WITH ${dbHelper.escape(value)}`;
+            case FilterTypes.TYPE_ENDS:
+                return `REVERSE(${field}) STARTING WITH ${dbHelper.escape(value)}`;
+            case FilterTypes.TYPE_NOT_ENDS:
+                return `REVERSE(${field}) NOT STARTING WITH ${dbHelper.escape(value)}`;
+
+            case FilterTypes.TYPE_GREATER:
+                if (value instanceof Date) return `CAST (${field} AS TIMESTAMP) > ${dbHelper.escape(value)}`;
+                return `${field} > ${dbHelper.escape(value)}`;
+            case FilterTypes.TYPE_LESS:
+                if (value instanceof Date) return `CAST (${field} AS TIMESTAMP) < ${dbHelper.escape(value)}`;
+                return `${field} < ${dbHelper.escape(value)}`;
             default:
                 return ''
         }
+    }
+
+
+    quote(str: string): string {
+        return `"${str}"`;
     }
 }

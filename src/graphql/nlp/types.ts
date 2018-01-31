@@ -1,5 +1,5 @@
 import {GraphQLInputObjectType, GraphQLObjectType} from "graphql";
-import {GraphQLFieldResolver} from "graphql/type/definition";
+import {GraphQLResolveInfo} from "graphql/type/definition";
 import {FilterTypes, NLPSchemaTypes} from "./NLPSchema";
 
 type ID = number | string;
@@ -33,12 +33,20 @@ export interface Table {
     readonly fields: Field[];
 }
 
+export type Value = string | number | boolean | Date
+
 export interface Adapter<DB> {
-    connectToDB: () => Promise<DB>;
-    disconnectFromDB: (context: Context<DB>) => Promise<void>;
-    getTables: (context: Context<DB>) => Promise<Table[]>;
-    resolve: GraphQLFieldResolver<any, any, any>;
-    createSQLCondition: (type: FilterTypes, field: string, value: any) => string;
+    connectToDB(): Promise<DB>;
+
+    disconnectFromDB(context: Context<DB>): Promise<void>;
+
+    getTables(context: Context<DB>): Promise<Table[]>;
+
+    resolve(source: any, args: any, context: any, info: GraphQLResolveInfo): any;
+
+    createSQLCondition(type: FilterTypes, field: string, value: Value): string;
+
+    quote(str: string): string;
 }
 
 export interface Options<Database> {
