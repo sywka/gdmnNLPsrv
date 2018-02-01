@@ -105,7 +105,13 @@ export class NLPSchema<Database> {
         if (!where) return "";
 
         let groupsConditions = Object.keys(where).reduce((groupsConditions, filterName) => {
-            if (filterName === "or") return groupsConditions;
+            switch (filterName) {
+                case "not":
+                case "or":
+                case "and":
+                case "isNull":
+                    return groupsConditions;
+            }
 
             const filter: any = where[filterName];
             let conditions = Object.keys(filter).reduce((conditions, fieldName) => {
@@ -122,6 +128,9 @@ export class NLPSchema<Database> {
             return groupsConditions;
         }, []);
 
+        if (where.isNull) {
+            groupsConditions.push(`${tableAlias}.${this.adapter.quote(where.isNull)} IS NULL`);
+        }
         if (where.not) {
             const not = where.not.reduce((conditions, item) => {
                 conditions.push(this._createSQLWhere(tableAlias, item));
@@ -174,7 +183,7 @@ export class NLPSchema<Database> {
         ));
         if (duplicate) return duplicate;
 
-        const fieldsEnumType = new GraphQLEnumType({
+        const sortingFieldsEnumType = new GraphQLEnumType({
             name: `SORTING_FIELDS_${NLPSchema._escape(table.name)}`,
             values: table.fields.reduce((values, field) => {
                 values[field.name] = {
@@ -188,20 +197,64 @@ export class NLPSchema<Database> {
         const inputType = new GraphQLInputObjectType({
             name: `SORTING_${NLPSchema._escape(table.name)}`,
             fields: () => ({
-                asc: {type: fieldsEnumType},
-                desc: {type: fieldsEnumType}
+                asc: {type: sortingFieldsEnumType},
+                desc: {type: sortingFieldsEnumType}
             })
         });
         context.inputTypes.push(inputType);
         return inputType;
     }
 
-    //TODO in general way
     private _createFilterInputType(context: Context<Database>, table: Table): GraphQLInputObjectType {
         const duplicate: GraphQLInputObjectType = context.inputTypes.find(type => (
             type.name === `FILTER_${NLPSchema._escape(table.name)}`
         ));
         if (duplicate) return duplicate;
+
+        const nullableFieldsEnumType = new GraphQLEnumType({
+            name: `IS_NULL_FIELDS_${NLPSchema._escape(table.name)}`,
+            values: table.fields.reduce((values, field) => {
+                if (!field.nonNull) {
+                    values[field.name] = {
+                        value: field.name,
+                        description: NLPSchema._indicesToStr(field.indices)
+                    };
+                }
+                return values;
+            }, {})
+        });
+
+        const beginsOrEndsType = new GraphQLInputObjectType({
+            name: `BEGINS_OR_ENDS_${table.name}`,
+            fields: () => table.fields.reduce((fields, field) => {
+                switch (field.type) {
+                    case NLPSchemaTypes.TYPE_STRING:
+                        fields[field.name] = {
+                            type: NLPSchema._convertToGraphQLType(field.type),
+                            description: NLPSchema._indicesToStr(field.indices)
+                        };
+                        break;
+                }
+                return fields;
+            }, {})
+        });
+
+        const greaterOrLessType = new GraphQLInputObjectType({
+            name: `GREATER_OR_LESS_${table.name}`,
+            fields: () => table.fields.reduce((fields, field) => {
+                switch (field.type) {
+                    case NLPSchemaTypes.TYPE_DATE:
+                    case NLPSchemaTypes.TYPE_INT:
+                    case NLPSchemaTypes.TYPE_FLOAT:
+                        fields[field.name] = {
+                            type: NLPSchema._convertToGraphQLType(field.type),
+                            description: NLPSchema._indicesToStr(field.indices)
+                        };
+                        break;
+                }
+                return fields;
+            }, {})
+        });
 
         const inputType = new GraphQLInputObjectType({
             name: `FILTER_${NLPSchema._escape(table.name)}`,
@@ -210,12 +263,10 @@ export class NLPSchema<Database> {
                     type: new GraphQLInputObjectType({
                         name: `EQUALS_${table.name}`,
                         fields: () => table.fields.reduce((fields, field) => {
-                            if (!field.tableNameRef) {
-                                fields[field.name] = {
-                                    type: NLPSchema._convertToGraphQLType(field.type),
-                                    description: NLPSchema._indicesToStr(field.indices)
-                                };
-                            }
+                            fields[field.name] = {
+                                type: NLPSchema._convertToGraphQLType(field.type),
+                                description: NLPSchema._indicesToStr(field.indices)
+                            };
                             return fields;
                         }, {})
                     })
@@ -224,72 +275,23 @@ export class NLPSchema<Database> {
                     type: new GraphQLInputObjectType({
                         name: `CONTAINS_${table.name}`,
                         fields: () => table.fields.reduce((fields, field) => {
-                            if (!field.tableNameRef && field.type === NLPSchemaTypes.TYPE_STRING) {
-                                fields[field.name] = {
-                                    type: NLPSchema._convertToGraphQLType(field.type),
-                                    description: NLPSchema._indicesToStr(field.indices)
-                                };
+                            switch (field.type) {
+                                case NLPSchemaTypes.TYPE_STRING:
+                                    fields[field.name] = {
+                                        type: NLPSchema._convertToGraphQLType(field.type),
+                                        description: NLPSchema._indicesToStr(field.indices)
+                                    };
+                                    break;
                             }
                             return fields;
                         }, {})
                     })
                 },
-                [FilterTypes.TYPE_BEGINS]: {
-                    type: new GraphQLInputObjectType({
-                        name: `BEGINS_${table.name}`,
-                        fields: () => table.fields.reduce((fields, field) => {
-                            if (!field.tableNameRef && field.type === NLPSchemaTypes.TYPE_STRING) {
-                                fields[field.name] = {
-                                    type: NLPSchema._convertToGraphQLType(field.type),
-                                    description: NLPSchema._indicesToStr(field.indices)
-                                };
-                            }
-                            return fields;
-                        }, {})
-                    })
-                },
-                [FilterTypes.TYPE_ENDS]: {
-                    type: new GraphQLInputObjectType({
-                        name: `ENDS_${table.name}`,
-                        fields: () => table.fields.reduce((fields, field) => {
-                            if (!field.tableNameRef && field.type === NLPSchemaTypes.TYPE_STRING) {
-                                fields[field.name] = {
-                                    type: NLPSchema._convertToGraphQLType(field.type),
-                                    description: NLPSchema._indicesToStr(field.indices)
-                                };
-                            }
-                            return fields;
-                        }, {})
-                    })
-                },
-                [FilterTypes.TYPE_GREATER]: {
-                    type: new GraphQLInputObjectType({
-                        name: `GREATER_${table.name}`,
-                        fields: () => table.fields.reduce((fields, field) => {
-                            if (!field.tableNameRef && field.type !== NLPSchemaTypes.TYPE_STRING) {
-                                fields[field.name] = {
-                                    type: NLPSchema._convertToGraphQLType(field.type),
-                                    description: NLPSchema._indicesToStr(field.indices)
-                                };
-                            }
-                            return fields;
-                        }, {})
-                    })
-                },
-                [FilterTypes.TYPE_LESS]: {
-                    type: new GraphQLInputObjectType({
-                        name: `LESS_${table.name}`,
-                        fields: () => table.fields.reduce((fields, field) => {
-                            if (!field.tableNameRef && field.type !== NLPSchemaTypes.TYPE_STRING) {
-                                fields[field.name] = {
-                                    type: NLPSchema._convertToGraphQLType(field.type),
-                                    description: NLPSchema._indicesToStr(field.indices)
-                                };
-                            }
-                            return fields;
-                        }, {})
-                    })
-                },
+                [FilterTypes.TYPE_BEGINS]: {type: beginsOrEndsType},
+                [FilterTypes.TYPE_ENDS]: {type: beginsOrEndsType},
+                [FilterTypes.TYPE_GREATER]: {type: greaterOrLessType},
+                [FilterTypes.TYPE_LESS]: {type: greaterOrLessType},
+                isNull: {type: nullableFieldsEnumType},
                 or: {type: new GraphQLList(inputType)},
                 and: {type: new GraphQLList(inputType)},
                 not: {type: new GraphQLList(inputType)}
