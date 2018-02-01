@@ -12,8 +12,8 @@
     }
   },
   "db": {
-    "host": "localhost",
-    "port": 3050,
-    "path": "C:\\Users\\sywka\\Desktop\\ETALON.FDB"
+    "host": "brutto",
+    "port": 3053,
+    "path": "k:\\bases\\broiler\\GDBASE_2017_10_02.FDB"
   }
 }

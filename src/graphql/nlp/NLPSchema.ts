@@ -56,7 +56,7 @@ export class NLPSchema<Database> {
         }, "");
     }
 
-    private static _escape(str: string): string {
+    private static _escape(str: string): string {   //FIXME possible collisions
         return str.replace(/\$/g, "__");
     }
 
@@ -64,6 +64,10 @@ export class NLPSchema<Database> {
         const field = table.fields.find((field) => field.primary);
         if (field) return field.name;
         return "";
+    }
+
+    private static _findOriginalFieldName(table: Table, fieldName): string {
+        return table.fields.find((field) => NLPSchema._escape(field.name) === fieldName).name;
     }
 
     private static _createObjectOrderBy(order: any[]): { [fieldName: string]: string } {
@@ -101,7 +105,7 @@ export class NLPSchema<Database> {
         }
     }
 
-    private _createSQLWhere(tableAlias: string, where: any): string {
+    private _createSQLWhere(table: Table, tableAlias: string, where: any): string {
         if (!where) return "";
 
         let groupsConditions = Object.keys(where).reduce((groupsConditions, filterName) => {
@@ -118,7 +122,7 @@ export class NLPSchema<Database> {
                 const value: any = filter[fieldName];
                 const condition = this.adapter.createSQLCondition(
                     filterName as FilterTypes,
-                    `${tableAlias}.${this.adapter.quote(fieldName)}`,
+                    `${tableAlias}.${this.adapter.quote(NLPSchema._findOriginalFieldName(table, fieldName))}`,
                     value
                 );
                 if (condition) conditions.push(condition);
@@ -133,21 +137,21 @@ export class NLPSchema<Database> {
         }
         if (where.not) {
             const not = where.not.reduce((conditions, item) => {
-                conditions.push(this._createSQLWhere(tableAlias, item));
+                conditions.push(this._createSQLWhere(table, tableAlias, item));
                 return conditions;
             }, []);
             if (not.length) groupsConditions.push(`NOT (${not.join(" AND ")})`);
         }
         if (where.or) {
             const or = where.or.reduce((conditions, item) => {
-                conditions.push(this._createSQLWhere(tableAlias, item));
+                conditions.push(this._createSQLWhere(table, tableAlias, item));
                 return conditions;
             }, []);
             if (or.length) groupsConditions.push(`(${or.join(" OR ")})`);
         }
         if (where.and) {
             const and = where.and.reduce((conditions, item) => {
-                conditions.push(this._createSQLWhere(tableAlias, item));
+                conditions.push(this._createSQLWhere(table, tableAlias, item));
                 return conditions;
             }, []);
             if (and.length) groupsConditions.push(`(${and.join(" AND ")})`);
@@ -167,7 +171,7 @@ export class NLPSchema<Database> {
                             where: {type: this._createFilterInputType(context, table)},
                             order: {type: new GraphQLList(this._createSortingInputType(context, table))}
                         },
-                        where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where),
+                        where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(table, tableAlias, args.where),
                         orderBy: (args) => NLPSchema._createObjectOrderBy(args.order),
                         resolve: this.adapter.resolve
                     };
@@ -186,7 +190,7 @@ export class NLPSchema<Database> {
         const sortingFieldsEnumType = new GraphQLEnumType({
             name: `SORTING_FIELDS_${NLPSchema._escape(table.name)}`,
             values: table.fields.reduce((values, field) => {
-                values[field.name] = {
+                values[NLPSchema._escape(field.name)] = {
                     value: field.name,
                     description: NLPSchema._indicesToStr(field.indices)
                 };
@@ -215,7 +219,7 @@ export class NLPSchema<Database> {
             name: `IS_NULL_FIELDS_${NLPSchema._escape(table.name)}`,
             values: table.fields.reduce((values, field) => {
                 if (!field.nonNull) {
-                    values[field.name] = {
+                    values[NLPSchema._escape(field.name)] = {
                         value: field.name,
                         description: NLPSchema._indicesToStr(field.indices)
                     };
@@ -229,7 +233,7 @@ export class NLPSchema<Database> {
             fields: () => table.fields.reduce((fields, field) => {
                 switch (field.type) {
                     case NLPSchemaTypes.TYPE_STRING:
-                        fields[field.name] = {
+                        fields[NLPSchema._escape(field.name)] = {
                             type: NLPSchema._convertToGraphQLType(field.type),
                             description: NLPSchema._indicesToStr(field.indices)
                         };
@@ -246,7 +250,7 @@ export class NLPSchema<Database> {
                     case NLPSchemaTypes.TYPE_DATE:
                     case NLPSchemaTypes.TYPE_INT:
                     case NLPSchemaTypes.TYPE_FLOAT:
-                        fields[field.name] = {
+                        fields[NLPSchema._escape(field.name)] = {
                             type: NLPSchema._convertToGraphQLType(field.type),
                             description: NLPSchema._indicesToStr(field.indices)
                         };
@@ -263,7 +267,7 @@ export class NLPSchema<Database> {
                     type: new GraphQLInputObjectType({
                         name: `EQUALS_${table.name}`,
                         fields: () => table.fields.reduce((fields, field) => {
-                            fields[field.name] = {
+                            fields[NLPSchema._escape(field.name)] = {
                                 type: NLPSchema._convertToGraphQLType(field.type),
                                 description: NLPSchema._indicesToStr(field.indices)
                             };
@@ -277,7 +281,7 @@ export class NLPSchema<Database> {
                         fields: () => table.fields.reduce((fields, field) => {
                             switch (field.type) {
                                 case NLPSchemaTypes.TYPE_STRING:
-                                    fields[field.name] = {
+                                    fields[NLPSchema._escape(field.name)] = {
                                         type: NLPSchema._convertToGraphQLType(field.type),
                                         description: NLPSchema._indicesToStr(field.indices)
                                     };
@@ -302,7 +306,9 @@ export class NLPSchema<Database> {
     }
 
     private _createType(context: Context<Database>, table: Table): GraphQLObjectType {
-        const duplicate: GraphQLObjectType = context.types.find(type => type.name === NLPSchema._escape(table.name));
+        const duplicate: GraphQLObjectType = context.types.find(type => (
+            type.name === NLPSchema._escape(table.name)
+        ));
         if (duplicate) return duplicate;
 
         const type: GraphQLObjectType = new GraphQLObjectType({
@@ -352,7 +358,7 @@ export class NLPSchema<Database> {
                         `${parentTable}.${this.adapter.quote(NLPSchema._findPrimaryFieldName(table))}` +
                         ` = ${joinTable}.${this.adapter.quote(NLPSchema._findPrimaryFieldName(table))}`
                     ),
-                    where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where),
+                    where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(table, tableAlias, args.where),
                     orderBy: (args) => NLPSchema._createObjectOrderBy(args.order)
                 };
                 return fields;
@@ -372,7 +378,9 @@ export class NLPSchema<Database> {
             let sqlJoin;
             let args;
             if (field.tableNameRef) {
-                const tableRef: Table = context.tables.find((table) => table.name === field.tableNameRef);
+                const tableRef: Table = context.tables.find((table) => (
+                    table.name === NLPSchema._escape(field.tableNameRef)
+                ));
                 if (!tableRef) return fields;
 
                 fieldName = NLPSchema._escape(this.linkCoder(table, field));
@@ -397,7 +405,7 @@ export class NLPSchema<Database> {
                 args,
                 sqlColumn: field.name,
                 sqlJoin,
-                where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(tableAlias, args.where),
+                where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(table, tableAlias, args.where),
                 orderBy: (args) => NLPSchema._createObjectOrderBy(args.order)
             };
             return fields;
