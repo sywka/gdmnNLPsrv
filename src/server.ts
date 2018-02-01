@@ -1,9 +1,9 @@
-import * as config from 'config'
-import * as http from 'http'
-import * as https from 'https'
-import * as path from 'path'
-import * as fs from 'fs'
-import app from './app'
+import config from "config";
+import http from "http";
+import https from "https";
+import path from "path";
+import fs from "fs";
+import app from "./app";
 
 if (config.get('server.http.enabled')) {
     let server = http.createServer(app);

@@ -1,9 +1,9 @@
-import * as express from 'express'
-import * as graphqlHTTP from 'express-graphql'
-import {express as expressMiddleware} from 'graphql-voyager/middleware'
-import {createQueueDBContext, destroyQueueDBContext} from '../../graphql/v1/queue'
-import {NLPSchema} from '../../graphql/nlp/NLPSchema'
-import {FBAdapter} from '../../database/FBAdapter'
+import express from "express";
+import graphqlHTTP from "express-graphql";
+import {express as expressMiddleware} from "graphql-voyager/middleware";
+import {createQueueDBContext, destroyQueueDBContext} from "../../graphql/v1/queue";
+import {NLPSchema} from "../../graphql/nlp/NLPSchema";
+import {FBAdapter} from "../../database/FBAdapter";
 
 let nlpSchema = new NLPSchema({
     adapter: new FBAdapter(),
@@ -13,14 +13,14 @@ let nlpSchema = new NLPSchema({
 
 const router = express.Router();
 
-router.use('/schema/viewer', (req, res, next) => {
+router.use("/schema/viewer", (req, res, next) => {
     expressMiddleware({
-        endpointUrl: '/api/v1',
+        endpointUrl: "/api/v1",
         displayOptions: req.query
-    })(req, res, next)
+    })(req, res, next);
 });
 
-router.use('/', graphqlHTTP(async (req) => {
+router.use("/", graphqlHTTP(async (req) => {
     const startTime = Date.now();
     let context = await createQueueDBContext();
     return {
@@ -29,9 +29,9 @@ router.use('/', graphqlHTTP(async (req) => {
         context: context,
         async extensions({document, variables, operationName, result}) {
             await destroyQueueDBContext(context);
-            return {runTime: (Date.now() - startTime) + ' мсек'};
+            return {runTime: (Date.now() - startTime) + " мсек"};
         }
-    }
+    };
 }));
 
 export default router;

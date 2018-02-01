@@ -1,5 +1,5 @@
-import * as Queue from 'promise-queue'
-import * as dbHelper from '../../database/dbHelper'
+import Queue from "promise-queue";
+import * as dbHelper from "../../database/dbHelper";
 
 export { dbHelper }
 

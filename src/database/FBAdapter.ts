@@ -1,4 +1,4 @@
-import * as NestHydrationJS from "nesthydrationjs";
+import NestHydrationJS from "nesthydrationjs";
 import joinMonster from "join-monster";
 import {Database} from "node-firebird";
 import {GraphQLResolveInfo} from "graphql/type/definition";
@@ -31,11 +31,11 @@ export class FBAdapter implements Adapter<Database> {
     }
 
     public async connectToDB(): Promise<Database> {
-        return await dbHelper.attach()
+        return await dbHelper.attach();
     }
 
     public async disconnectFromDB(context: Context<Database>): Promise<void> {
-        await dbHelper.detach(context.db)
+        await dbHelper.detach(context.db);
     }
 
     public async getTables(context: Context<Database>): Promise<Table[]> {
@@ -115,26 +115,26 @@ export class FBAdapter implements Adapter<Database> {
         `);
 
         const definition: any = [{
-            name: {column: 'tableName', id: true},
+            name: {column: "tableName", id: true},
             indices: [{
-                key: 'tableIndexName'
+                key: "tableIndexName"
             }],
             fields: [{
-                id: {column: 'fieldKey', id: true},
-                name: 'fieldName',
-                primary: {column: 'primaryFlag', type: 'BOOLEAN', default: false},
+                id: {column: "fieldKey", id: true},
+                name: "fieldName",
+                primary: {column: "primaryFlag", type: "BOOLEAN", default: false},
                 indices: [{
-                    key: 'fieldIndexName'
+                    key: "fieldIndexName"
                 }],
-                type: {column: 'fieldType', type: FBAdapter._convertType},
-                nonNull: {column: 'nullFlag', type: 'BOOLEAN', default: false},
-                tableNameRef: 'relationName',
-                fieldNameRef: 'relationFieldName',
+                type: {column: "fieldType", type: FBAdapter._convertType},
+                nonNull: {column: "nullFlag", type: "BOOLEAN", default: false},
+                tableNameRef: "relationName",
+                fieldNameRef: "relationFieldName",
                 refs: [{
-                    id: {column: 'refKey', type: 'NUMBER'},
-                    description: 'refDescription',
+                    id: {column: "refKey", type: "NUMBER"},
+                    description: "refDescription",
                     indices: [{
-                        key: 'refTypeIndexName'
+                        key: "refTypeIndexName"
                     }]
                 }]
             }]
@@ -146,8 +146,8 @@ export class FBAdapter implements Adapter<Database> {
     async resolve(source: any, args: any, context: any, info: GraphQLResolveInfo) {
         return joinMonster(info, {}, sql => {
             console.log(sql);
-            return dbHelper.query(context.db, sql)
-        })
+            return dbHelper.query(context.db, sql);
+        });
     }
 
     public createSQLCondition(type: FilterTypes, field: string, value: Value): string {
@@ -167,7 +167,7 @@ export class FBAdapter implements Adapter<Database> {
             case FilterTypes.TYPE_LESS:
                 return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} < ${dbHelper.escape(value)}`;
             default:
-                return ''
+                return "";
         }
     }
 

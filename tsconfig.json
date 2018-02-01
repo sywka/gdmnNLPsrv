@@ -3,10 +3,14 @@
     "module": "commonjs",
     "target": "es2017",
     "sourceMap": true,
+    "esModuleInterop": true,
     "lib": [
       "esnext"
     ],
-    "typeRoots" : ["node_modules/@types", "./typings"]
+    "typeRoots": [
+      "node_modules/@types",
+      "./typings"
+    ]
   },
   "exclude": [
     "node_modules"

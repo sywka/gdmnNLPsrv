@@ -1,6 +1,6 @@
-import * as config from 'config';
-import * as firebird from 'node-firebird';
-import * as path from 'path';
+import config from "config";
+import firebird from "node-firebird";
+import path from "path";
 
 export let ISOLATION_READ_UNCOMMITTED = firebird.ISOLATION_READ_UNCOMMITTED;
 export let ISOLATION_READ_COMMITED = firebird.ISOLATION_READ_COMMITED;
@@ -9,34 +9,34 @@ export let ISOLATION_REPEATABLE_READ = firebird.ISOLATION_REPEATABLE_READ;
 export let ISOLATION_SERIALIZABLE = firebird.ISOLATION_SERIALIZABLE;
 
 export const options: firebird.Options = {
-    host: config.get('db.host'),
-    port: config.get('db.port'),
-    user: config.get('db.user'),
-    password: config.get('db.password'),
-    database: path.resolve(process.cwd(), config.get('db.path'))
+    host: config.get("db.host"),
+    port: config.get("db.port"),
+    user: config.get("db.user"),
+    password: config.get("db.password"),
+    database: path.resolve(process.cwd(), config.get("db.path"))
 };
 
 export function escape(value: any): string {
-    return firebird.escape(value)
+    return firebird.escape(value);
 }
 
 export function formatDate(date: Date): string {
-    if (typeof(date) === 'string') {
+    if (typeof(date) === "string") {
         date = new Date(date);
     }
-    if (!(date instanceof Date)) throw new Error('unsupported type');
+    if (!(date instanceof Date)) throw new Error("unsupported type");
 
-    return '\'' + date.getDate() + '.' + (date.getMonth() + 1) + '.' + date.getFullYear() + '\'';
+    return "'" + date.getDate() + "." + (date.getMonth() + 1) + "." + date.getFullYear() + "'";
 }
 
 export function formatDateTime(date: Date): string {
-    if (typeof(date) === 'string') {
+    if (typeof(date) === "string") {
         date = new Date(date);
     }
-    if (!(date instanceof Date)) throw new Error('unsupported type');
+    if (!(date instanceof Date)) throw new Error("unsupported type");
 
-    return '\'' + date.getDate() + '.' + (date.getMonth() + 1) + '.' + date.getFullYear() + ' ' +
-        date.getHours() + ':' + date.getMinutes() + ':' + date.getSeconds() + '.' + date.getMilliseconds() + '\'';
+    return "'" + date.getDate() + "." + (date.getMonth() + 1) + "." + date.getFullYear() + " " +
+        date.getHours() + ":" + date.getMinutes() + ":" + date.getSeconds() + "." + date.getMilliseconds() + "'";
 }
 
 export async function attachOrCreate(): Promise<firebird.Database> {
@@ -66,7 +66,7 @@ export async function create(): Promise<firebird.Database> {
 export async function detach(db: firebird.Database): Promise<void> {
     return new Promise<void>((resolve, reject) => {
         db.detach((err) => {
-            err ? reject(err) : resolve()
+            err ? reject(err) : resolve();
         });
     });
 }
@@ -93,11 +93,11 @@ export async function readBlob(blobFieldResult: (callback: (err, name, event) =>
             if (err) return reject(err);
 
             let chunks = [], length = 0;
-            event.on('data', (chunk) => {
+            event.on("data", (chunk) => {
                 chunks.push(chunk);
                 length += chunk.length;
             });
-            event.on('end', () => {
+            event.on("end", () => {
                 resolve(Buffer.concat(chunks, length).toString());
             });
         });
