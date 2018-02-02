@@ -5,11 +5,7 @@ import {createQueueDBContext, destroyQueueDBContext} from "../../graphql/v1/queu
 import {NLPSchema} from "../../graphql/nlp/NLPSchema";
 import {FBAdapter} from "../../database/FBAdapter";
 
-let nlpSchema = new NLPSchema({
-    adapter: new FBAdapter(),
-    emulatedLinkCoder: (table, ref) => `link_${ref.id}`,
-    emulatedEntityCoder: (table, ref) => `EMULATED_${table.name}_${ref.id}`
-});
+let nlpSchema = new NLPSchema({adapter: new FBAdapter()});
 
 const router = express.Router();
 

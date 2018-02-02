@@ -144,6 +144,7 @@ export class FBAdapter implements Adapter<Database> {
     }
 
     async resolve(source: any, args: any, context: any, info: GraphQLResolveInfo) {
+        if (source) return source[info.fieldName];
         return joinMonster(info, {}, sql => {
             console.log(sql);
             return dbHelper.query(context.db, sql);

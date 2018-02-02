@@ -19,15 +19,9 @@ export class NLPSchema<Database> {
 
     protected schema: GraphQLSchema;
     protected adapter: Adapter<Database>;
-    protected linkCoder: (table: Table, field: Field) => string;
-    protected emulatedLinkCoder: (table: Table, ref: Ref) => string;
-    protected emulatedEntityCoder: (table: Table, ref: Ref) => string;
 
     constructor(options: Options<Database>) {
         this.adapter = options.adapter;
-        this.linkCoder = options.linkCoder || ((table, field) => `link_${field.name}`);
-        this.emulatedLinkCoder = options.emulatedLinkCoder || ((table, ref) => `link_${ref.id}`);
-        this.emulatedEntityCoder = options.emulatedEntityCoder || ((table, ref) => `EMULATED_${table.name}_${ref.id}`);
 
         this.getSchema().catch(console.log); //tmp
     }
@@ -56,10 +50,11 @@ export class NLPSchema<Database> {
         }, "");
     }
 
-    private static _escapeName(objectsWithName: (Table | Field)[], name): string {
+    private static _escapeName(objectsWithName: (Table | Field)[], name: string, prefix?: string): string {
         let replaceValue = "__";
         while (true) {
-            const escapedName = name.replace(/\$/g, replaceValue);
+            let nameWithPrefix = prefix ? `${prefix}$${name}` : name;
+            const escapedName = nameWithPrefix.replace(/\$/g, replaceValue);
             if (escapedName === name) return escapedName;
             if (!objectsWithName.find((object) => object.name === escapedName)) {
                 return escapedName;
@@ -338,10 +333,10 @@ export class NLPSchema<Database> {
     private _createEmulatedFields(context: Context<Database>, table: Table): GraphQLFieldConfigMap<void, void> {
         return table.fields.reduce((fields, field) => {
             let tmp = field.refs.reduce((fields, ref) => {
-                fields[this.emulatedLinkCoder(table, ref)] = {
+                fields[NLPSchema._escapeName(table.fields, ref.id as string, "link")] = {
                     type: new GraphQLNonNull(
                         new GraphQLObjectType({
-                            name: this.emulatedEntityCoder(table, ref),
+                            name: NLPSchema._escapeName(context.tables, `${table.name}_${ref.id}`, "EMULATED"),
                             sqlTable: table.name,
                             uniqueKey: NLPSchema._findPrimaryFieldName(table),
                             description: ref.description,
@@ -391,7 +386,7 @@ export class NLPSchema<Database> {
                 ));
                 if (!tableRef) return resultFields;
 
-                fieldName = NLPSchema._escapeName(fields, this.linkCoder(table, field));
+                fieldName = NLPSchema._escapeName(fields, field.name, "link");
                 fieldType = new GraphQLList(this._createType(context, tableRef));
                 fieldDescription = field.refs.length ? NLPSchema._indicesToStr(field.refs[0].indices) : "";
                 sqlJoin = (parentTable, joinTable, args) => (
@@ -411,6 +406,7 @@ export class NLPSchema<Database> {
                 type: field.nonNull ? new GraphQLNonNull(fieldType) : fieldType,
                 description: fieldDescription,
                 args,
+                resolve: this.adapter.resolve,
                 sqlColumn: field.name,
                 sqlJoin,
                 where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(table, tableAlias, args.where),
@@ -422,7 +418,7 @@ export class NLPSchema<Database> {
 }
 
 export enum NLPSchemaTypes {
-    TYPE_BOOLEAN, TYPE_STRING, TYPE_INT, TYPE_FLOAT, TYPE_DATE
+    TYPE_BOOLEAN, TYPE_STRING, TYPE_INT, TYPE_FLOAT, TYPE_DATE, TYPE_BLOB
 }
 
 export enum FilterTypes {

@@ -51,9 +51,6 @@ export interface Adapter<DB> {
 
 export interface Options<Database> {
     adapter: Adapter<Database>;
-    linkCoder?: (table: Table, field: Field) => string;
-    emulatedLinkCoder?: (table: Table, ref: Ref) => string;
-    emulatedEntityCoder?: (table: Table, ref: Ref) => string;
 }
 
 export interface Context<DB> {
