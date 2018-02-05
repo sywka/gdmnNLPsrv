@@ -8,17 +8,17 @@ export interface Index {
     readonly key: string;
 }
 
-export interface Ref {
+export interface BaseIndexing {
     readonly id: ID;
-    readonly description: string;
+    readonly name: string;
     readonly indices: Index[];
 }
 
-export interface Field {
-    readonly id: ID;
-    readonly name: string;
+export interface Ref extends BaseIndexing {
+}
+
+export interface Field extends BaseIndexing {
     readonly primary: boolean;
-    readonly indices: Index[];
     readonly type: NLPSchemaTypes;
     readonly nonNull: boolean;
     readonly tableNameRef: string;
@@ -26,10 +26,7 @@ export interface Field {
     readonly refs: Ref[];
 }
 
-export interface Table {
-    readonly id: ID;
-    readonly name: string;
-    readonly indices: Index[];
+export interface Table extends BaseIndexing {
     readonly fields: Field[];
 }
 

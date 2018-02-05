@@ -13,20 +13,20 @@ export class FBAdapter implements Adapter<Database> {
             case 7:
             case 8:
             case 16:
-                return NLPSchemaTypes.TYPE_INT;
+                return NLPSchemaTypes.INT;
             case 10:
             case 11:
             case 27:
-                return NLPSchemaTypes.TYPE_FLOAT;
+                return NLPSchemaTypes.FLOAT;
             case 12:
             case 13:
             case 35:
-                return NLPSchemaTypes.TYPE_DATE;
+                return NLPSchemaTypes.DATE;
             case 14:
             case 37:
             case 40:
             default:
-                return NLPSchemaTypes.TYPE_STRING;
+                return NLPSchemaTypes.STRING;
         }
     }
 
@@ -103,7 +103,8 @@ export class FBAdapter implements Adapter<Database> {
                       
           WHERE r.rdb$view_blr IS NULL
             AND (r.rdb$system_flag IS NULL OR r.rdb$system_flag = 0)
-            
+            AND f.rdb$field_type != 45 AND f.rdb$field_type != 261
+              
             AND (
               r.rdb$relation_name = 'GD_PEOPLE'
               OR r.rdb$relation_name = 'GD_CONTACT'
@@ -132,7 +133,7 @@ export class FBAdapter implements Adapter<Database> {
                 fieldNameRef: "relationFieldName",
                 refs: [{
                     id: {column: "refKey", type: "NUMBER"},
-                    description: "refDescription",
+                    name: "refDescription",
                     indices: [{
                         key: "refTypeIndexName"
                     }]
@@ -153,19 +154,19 @@ export class FBAdapter implements Adapter<Database> {
 
     public createSQLCondition(type: FilterTypes, field: string, value: Value): string {
         switch (type) {
-            case FilterTypes.TYPE_EQUALS:
+            case FilterTypes.EQUALS:
                 return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} = ${dbHelper.escape(value)}`;
 
-            case FilterTypes.TYPE_CONTAINS:
+            case FilterTypes.CONTAINS:
                 return `${field} CONTAINING ${dbHelper.escape(value)}`;
-            case FilterTypes.TYPE_BEGINS:
+            case FilterTypes.BEGINS:
                 return `${field} STARTING WITH ${dbHelper.escape(value)}`;
-            case FilterTypes.TYPE_ENDS:
+            case FilterTypes.ENDS:
                 return `REVERSE(${field}) STARTING WITH ${dbHelper.escape(value)}`;
 
-            case FilterTypes.TYPE_GREATER:
+            case FilterTypes.GREATER:
                 return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} > ${dbHelper.escape(value)}`;
-            case FilterTypes.TYPE_LESS:
+            case FilterTypes.LESS:
                 return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} < ${dbHelper.escape(value)}`;
             default:
                 return "";

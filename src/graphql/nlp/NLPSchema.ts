@@ -13,7 +13,7 @@ import {
 } from "graphql";
 import GraphQLDate from "graphql-date";
 import {GraphQLFieldConfigMap, GraphQLType} from "graphql/type/definition";
-import {Adapter, Context, Field, Index, Options, Ref, Table} from "./types";
+import {Adapter, BaseIndexing, Context, Field, Options, Table} from "./types";
 
 export class NLPSchema<Database> {
 
@@ -28,35 +28,27 @@ export class NLPSchema<Database> {
 
     private static _convertToGraphQLType(type: NLPSchemaTypes): GraphQLScalarType {
         switch (type) {
-            case NLPSchemaTypes.TYPE_INT:
+            case NLPSchemaTypes.INT:
                 return GraphQLInt;
-            case NLPSchemaTypes.TYPE_FLOAT:
+            case NLPSchemaTypes.FLOAT:
                 return GraphQLFloat;
-            case NLPSchemaTypes.TYPE_DATE:
+            case NLPSchemaTypes.DATE:
                 return GraphQLDate;
-            case NLPSchemaTypes.TYPE_BOOLEAN:
+            case NLPSchemaTypes.BOOLEAN:
                 return GraphQLBoolean;
-            case NLPSchemaTypes.TYPE_STRING:
+            case NLPSchemaTypes.STRING:
             default:
                 return GraphQLString;
         }
     }
 
-    private static _indicesToStr(indices: Index[]): string {
-        return indices.reduce((strOfIndices, index, i) => {
-            if (i) strOfIndices += ",";
-            strOfIndices += index.key;
-            return strOfIndices;
-        }, "");
-    }
-
-    private static _escapeName(objectsWithName: (Table | Field)[], name: string, prefix?: string): string {
+    private static _escapeName(bases: BaseIndexing[], name: string, prefix?: string): string {
         let replaceValue = "__";
         while (true) {
             let nameWithPrefix = prefix ? `${prefix}$${name}` : name;
             const escapedName = nameWithPrefix.replace(/\$/g, replaceValue);
             if (escapedName === name) return escapedName;
-            if (!objectsWithName.find((object) => object.name === escapedName)) {
+            if (!bases.find((base) => base.name === escapedName)) {
                 return escapedName;
             }
             replaceValue += "_";
@@ -71,6 +63,14 @@ export class NLPSchema<Database> {
 
     private static _findOriginalFieldName(table: Table, fieldName): string {
         return table.fields.find((field) => NLPSchema._escapeName(table.fields, field.name) === fieldName).name;
+    }
+
+    private static _createDescription(base: BaseIndexing): string {
+        return base.indices.reduce((strOfIndices, index) => {
+            if (strOfIndices) strOfIndices += ",";
+            strOfIndices += index.key;
+            return strOfIndices;
+        }, base.name ? base.name : "");
     }
 
     private static _createObjectOrderBy(order: any[]): { [fieldName: string]: string } {
@@ -169,7 +169,7 @@ export class NLPSchema<Database> {
                 fields: () => context.tables.reduce((fields, table) => {
                     fields[NLPSchema._escapeName(context.tables, table.name)] = {
                         type: new GraphQLNonNull(new GraphQLList(this._createType(context, table))),
-                        description: NLPSchema._indicesToStr(table.indices),
+                        description: NLPSchema._createDescription(table),
                         args: {
                             where: {type: this._createFilterInputType(context, table)},
                             order: {type: new GraphQLList(this._createSortingInputType(context, table))}
@@ -195,7 +195,7 @@ export class NLPSchema<Database> {
             values: table.fields.reduce((values, field) => {
                 values[NLPSchema._escapeName(table.fields, field.name)] = {
                     value: field.name,
-                    description: NLPSchema._indicesToStr(field.indices)
+                    description: NLPSchema._createDescription(field)
                 };
                 return values;
             }, {})
@@ -224,7 +224,7 @@ export class NLPSchema<Database> {
                 if (!field.nonNull) {
                     values[NLPSchema._escapeName(table.fields, field.name)] = {
                         value: field.name,
-                        description: NLPSchema._indicesToStr(field.indices)
+                        description: NLPSchema._createDescription(field)
                     };
                 }
                 return values;
@@ -235,10 +235,10 @@ export class NLPSchema<Database> {
             name: `BEGINS_OR_ENDS_${NLPSchema._escapeName(context.tables, table.name)}`,
             fields: () => table.fields.reduce((fields, field) => {
                 switch (field.type) {
-                    case NLPSchemaTypes.TYPE_STRING:
+                    case NLPSchemaTypes.STRING:
                         fields[NLPSchema._escapeName(table.fields, field.name)] = {
                             type: NLPSchema._convertToGraphQLType(field.type),
-                            description: NLPSchema._indicesToStr(field.indices)
+                            description: NLPSchema._createDescription(field)
                         };
                         break;
                 }
@@ -250,12 +250,12 @@ export class NLPSchema<Database> {
             name: `GREATER_OR_LESS_${NLPSchema._escapeName(context.tables, table.name)}`,
             fields: () => table.fields.reduce((fields, field) => {
                 switch (field.type) {
-                    case NLPSchemaTypes.TYPE_DATE:
-                    case NLPSchemaTypes.TYPE_INT:
-                    case NLPSchemaTypes.TYPE_FLOAT:
+                    case NLPSchemaTypes.DATE:
+                    case NLPSchemaTypes.INT:
+                    case NLPSchemaTypes.FLOAT:
                         fields[NLPSchema._escapeName(table.fields, field.name)] = {
                             type: NLPSchema._convertToGraphQLType(field.type),
-                            description: NLPSchema._indicesToStr(field.indices)
+                            description: NLPSchema._createDescription(field)
                         };
                         break;
                 }
@@ -266,27 +266,27 @@ export class NLPSchema<Database> {
         const inputType = new GraphQLInputObjectType({
             name: `FILTER_${NLPSchema._escapeName(context.tables, table.name)}`,
             fields: () => ({
-                [FilterTypes.TYPE_EQUALS]: {
+                [FilterTypes.EQUALS]: {
                     type: new GraphQLInputObjectType({
                         name: `EQUALS_${NLPSchema._escapeName(context.tables, table.name)}`,
                         fields: () => table.fields.reduce((fields, field) => {
                             fields[NLPSchema._escapeName(table.fields, field.name)] = {
                                 type: NLPSchema._convertToGraphQLType(field.type),
-                                description: NLPSchema._indicesToStr(field.indices)
+                                description: NLPSchema._createDescription(field)
                             };
                             return fields;
                         }, {})
                     })
                 },
-                [FilterTypes.TYPE_CONTAINS]: {
+                [FilterTypes.CONTAINS]: {
                     type: new GraphQLInputObjectType({
                         name: `CONTAINS_${NLPSchema._escapeName(context.tables, table.name)}`,
                         fields: () => table.fields.reduce((fields, field) => {
                             switch (field.type) {
-                                case NLPSchemaTypes.TYPE_STRING:
+                                case NLPSchemaTypes.STRING:
                                     fields[NLPSchema._escapeName(table.fields, field.name)] = {
                                         type: NLPSchema._convertToGraphQLType(field.type),
-                                        description: NLPSchema._indicesToStr(field.indices)
+                                        description: NLPSchema._createDescription(field)
                                     };
                                     break;
                             }
@@ -294,10 +294,10 @@ export class NLPSchema<Database> {
                         }, {})
                     })
                 },
-                [FilterTypes.TYPE_BEGINS]: {type: beginsOrEndsType},
-                [FilterTypes.TYPE_ENDS]: {type: beginsOrEndsType},
-                [FilterTypes.TYPE_GREATER]: {type: greaterOrLessType},
-                [FilterTypes.TYPE_LESS]: {type: greaterOrLessType},
+                [FilterTypes.BEGINS]: {type: beginsOrEndsType},
+                [FilterTypes.ENDS]: {type: beginsOrEndsType},
+                [FilterTypes.GREATER]: {type: greaterOrLessType},
+                [FilterTypes.LESS]: {type: greaterOrLessType},
                 isNull: {type: nullableFieldsEnumType},
                 or: {type: new GraphQLList(inputType)},
                 and: {type: new GraphQLList(inputType)},
@@ -318,7 +318,7 @@ export class NLPSchema<Database> {
             name: NLPSchema._escapeName(context.tables, table.name),
             sqlTable: table.name,
             uniqueKey: NLPSchema._findPrimaryFieldName(table),
-            description: NLPSchema._indicesToStr(table.indices),
+            description: NLPSchema._createDescription(table),
             fields: () => {
                 const fields = this._createFields(context, table, table.fields);
                 const emulatedFields = this._createEmulatedFields(context, table);
@@ -339,7 +339,7 @@ export class NLPSchema<Database> {
                             name: NLPSchema._escapeName(context.tables, `${table.name}_${ref.id}`, "EMULATED"),
                             sqlTable: table.name,
                             uniqueKey: NLPSchema._findPrimaryFieldName(table),
-                            description: ref.description,
+                            description: ref.name,
                             fields: () => {
                                 const refFields = table.fields.reduce((fields, field) => {
                                     if (field.refs.find((item) => item.id === ref.id)) {
@@ -351,7 +351,11 @@ export class NLPSchema<Database> {
                             }
                         })
                     ),
-                    description: NLPSchema._indicesToStr(ref.indices),
+                    description: NLPSchema._createDescription({
+                        id: ref.id,
+                        name: null,
+                        indices: ref.indices
+                    }),
                     args: {
                         where: {type: this._createFilterInputType(context, table)},
                         order: {type: new GraphQLList(this._createSortingInputType(context, table))}
@@ -388,7 +392,11 @@ export class NLPSchema<Database> {
 
                 fieldName = NLPSchema._escapeName(fields, field.name, "link");
                 fieldType = new GraphQLList(this._createType(context, tableRef));
-                fieldDescription = field.refs.length ? NLPSchema._indicesToStr(field.refs[0].indices) : "";
+                fieldDescription = NLPSchema._createDescription({
+                    id: field.id,
+                    name: field.name,
+                    indices: field.refs.length ? field.refs[0].indices : []     //TODO refs???
+                });
                 sqlJoin = (parentTable, joinTable, args) => (
                     `${parentTable}.${this.adapter.quote(field.name)} = ${joinTable}.${this.adapter.quote(field.fieldNameRef)}`
                 );
@@ -399,7 +407,7 @@ export class NLPSchema<Database> {
             } else {
                 fieldName = NLPSchema._escapeName(fields, field.name);
                 fieldType = NLPSchema._convertToGraphQLType(field.type);
-                fieldDescription = NLPSchema._indicesToStr(field.indices);
+                fieldDescription = NLPSchema._createDescription(field);
             }
 
             resultFields[fieldName] = {
@@ -418,16 +426,16 @@ export class NLPSchema<Database> {
 }
 
 export enum NLPSchemaTypes {
-    TYPE_BOOLEAN, TYPE_STRING, TYPE_INT, TYPE_FLOAT, TYPE_DATE, TYPE_BLOB
+    BOOLEAN, STRING, INT, FLOAT, DATE, BLOB
 }
 
 export enum FilterTypes {
-    TYPE_EQUALS = "equals",
+    EQUALS = "equals",
 
-    TYPE_CONTAINS = "contains",
-    TYPE_BEGINS = "begins",
-    TYPE_ENDS = "ends",
+    CONTAINS = "contains",
+    BEGINS = "begins",
+    ENDS = "ends",
 
-    TYPE_GREATER = "greater",
-    TYPE_LESS = "less"
+    GREATER = "greater",
+    LESS = "less"
 }
