@@ -4,9 +4,13 @@ import {GraphQLResolveInfo} from "graphql/type/definition";
 import {connectionFromArray} from "graphql-relay";
 import {Adapter, FilterTypes, NLPContext, NLPSchemaTypes, Table, Value} from "../../NLPSchema";
 import DBManager, {Options} from "./DBManager";
-import * as queue from "./queue";
 
-export class FBAdapter implements Adapter<DBManager, queue.Context> {
+export interface GraphQLContext {
+    query(query: string, params?: any[]): Promise<any[]>;
+    execute(query: string, params?: any[]): Promise<any[]>;
+}
+
+export class FBAdapter implements Adapter<DBManager, GraphQLContext> {
 
     protected options: Options;
 
@@ -152,14 +156,14 @@ export class FBAdapter implements Adapter<DBManager, queue.Context> {
         return NestHydrationJS().nest(result, definition);
     }
 
-    async resolve(source: any, args: any, context: queue.Context, info: GraphQLResolveInfo) {
+    async resolve(source: any, args: any, context: GraphQLContext, info: GraphQLResolveInfo) {
         if (source) {
             const field = source[info.fieldName];
             if (Array.isArray(field)) return connectionFromArray(field, args);
             return field;
         }
 
-        const result = await joinMonster(info, {}, (sql: string) => queue.query(context, sql));
+        const result = await joinMonster(info, {}, (sql: string) => context.query(sql));
         return connectionFromArray(result, args);
     }
 

@@ -2,10 +2,10 @@ import express from "express";
 import config from "config";
 import graphqlHTTP from "express-graphql";
 import {express as expressMiddleware} from "graphql-voyager/middleware";
-import {createQueueDBContext, destroyQueueDBContext} from "../../graphql/nlp/adapter/fb/queue";
 import {Options} from "../../graphql/nlp/adapter/fb/DBManager";
 import {NLPSchema} from "../../graphql/nlp/NLPSchema";
 import {FBAdapter} from "../../graphql/nlp/adapter/fb/FBAdapter";
+import Context from "../../graphql/nlp/adapter/fb/Context";
 
 const options: Options = {
     host: config.get("db.host"),
@@ -28,13 +28,13 @@ router.use("/schema/viewer", (req, res, next) => {
 
 router.use("/", graphqlHTTP(async (req) => {
     const startTime = Date.now();
-    let context = await createQueueDBContext(options);
+    const context = await new Context(options).attach();
     return {
         schema: await nlpSchema.getSchema(),
         graphiql: true,
         context: context,
         async extensions({document, variables, operationName, result}) {
-            await destroyQueueDBContext(context);
+            await context.detach();
             return {runTime: (Date.now() - startTime) + " мсек"};
         }
     };

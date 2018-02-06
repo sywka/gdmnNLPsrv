@@ -37,9 +37,9 @@ export abstract class Base<DB extends (firebird.Database | firebird.Transaction)
         });
     }
 
-    public async execute(query: string, params?: any[]) {
+    public async execute(query: string, params?: any[]): Promise<any[]> {
         if (!this.db) throw new Error("Database need created");
-        return new Promise((resolve, reject) => {
+        return new Promise<any[]>((resolve, reject) => {
             this.db.execute(query, params, (err, result) => {
                 err ? reject(err) : resolve(result);
             });
