@@ -12,15 +12,71 @@ import {
     GraphQLString
 } from "graphql";
 import GraphQLDate from "graphql-date";
-import {GraphQLFieldConfigMap, GraphQLType} from "graphql/type/definition";
-import {Adapter, BaseIndexing, Context, Field, Options, Table} from "./types";
+import {GraphQLFieldConfigMap, GraphQLResolveInfo, GraphQLType} from "graphql/type/definition";
+import {connectionArgs, connectionDefinitions, GraphQLConnectionDefinitions} from "graphql-relay";
 
-export class NLPSchema<Database> {
+type ID = number | string;
+
+export interface Index {
+    readonly key: string;
+}
+
+export interface BaseIndexing {
+    readonly id: ID;
+    readonly name: string;
+    readonly indices: Index[];
+}
+
+export interface Ref extends BaseIndexing {
+}
+
+export interface Field extends BaseIndexing {
+    readonly primary: boolean;
+    readonly type: NLPSchemaTypes;
+    readonly nonNull: boolean;
+    readonly tableNameRef: string;
+    readonly fieldNameRef: string;
+    readonly refs: Ref[];
+}
+
+export interface Table extends BaseIndexing {
+    readonly fields: Field[];
+}
+
+export type Value = string | number | boolean | Date
+
+export interface Adapter<DB, Context> {
+    connectToDB(): Promise<DB>;
+
+    disconnectFromDB(context: NLPContext<DB>): Promise<void>;
+
+    getTables(context: NLPContext<DB>): Promise<Table[]>;
+
+    resolve(source: any, args: any, context: Context, info: GraphQLResolveInfo): any;
+
+    createSQLCondition(type: FilterTypes, field: string, value: Value): string;
+
+    quote(str: string): string;
+}
+
+export interface Options<Database, Context> {
+    adapter: Adapter<Database, Context>;
+}
+
+export interface NLPContext<DB> {
+    database: DB;
+    tables: Table[];
+    types: GraphQLObjectType[];
+    inputTypes: GraphQLInputObjectType[];
+    connections: GraphQLConnectionDefinitions[];
+}
+
+export class NLPSchema<Database, Context> {
 
     protected schema: GraphQLSchema;
-    protected adapter: Adapter<Database>;
+    protected adapter: Adapter<Database, Context>;
 
-    constructor(options: Options<Database>) {
+    constructor(options: Options<Database, Context>) {
         this.adapter = options.adapter;
 
         this.getSchema().catch(console.log); //tmp
@@ -92,14 +148,14 @@ export class NLPSchema<Database> {
     public async getSchema(): Promise<GraphQLSchema> {
         if (this.schema) return this.schema;
 
-        const context: Context<Database> = {db: null, tables: [], types: [], inputTypes: []};
+        const context: NLPContext<Database> = {database: null, tables: [], types: [], inputTypes: [], connections: []};
         try {
-            context.db = await this.adapter.connectToDB();
+            context.database = await this.adapter.connectToDB();
             context.tables = await this.adapter.getTables(context);
             return this.schema = this._createSchema(context);
         } finally {
             try {
-                if (context.db) {
+                if (context.database) {
                     await this.adapter.disconnectFromDB(context);
                 }
             } catch (error) {
@@ -162,15 +218,16 @@ export class NLPSchema<Database> {
         return groupsConditions.join(" AND ");
     }
 
-    private _createSchema(context: Context<Database>): GraphQLSchema {
+    private _createSchema(context: NLPContext<Database>): GraphQLSchema {
         return new GraphQLSchema({
             query: new GraphQLObjectType({
                 name: "Tables",
                 fields: () => context.tables.reduce((fields, table) => {
                     fields[NLPSchema._escapeName(context.tables, table.name)] = {
-                        type: new GraphQLNonNull(new GraphQLList(this._createType(context, table))),
+                        type: this._createConnectionType(context, this._createType(context, table)),
                         description: NLPSchema._createDescription(table),
                         args: {
+                            ...connectionArgs,
                             where: {type: this._createFilterInputType(context, table)},
                             order: {type: new GraphQLList(this._createSortingInputType(context, table))}
                         },
@@ -184,7 +241,7 @@ export class NLPSchema<Database> {
         });
     }
 
-    private _createSortingInputType(context: Context<Database>, table: Table) {
+    private _createSortingInputType(context: NLPContext<Database>, table: Table) {
         const duplicate: GraphQLInputObjectType = context.inputTypes.find(type => (
             type.name === `SORTING_${NLPSchema._escapeName(context.tables, table.name)}`
         ));
@@ -212,7 +269,7 @@ export class NLPSchema<Database> {
         return inputType;
     }
 
-    private _createFilterInputType(context: Context<Database>, table: Table): GraphQLInputObjectType {
+    private _createFilterInputType(context: NLPContext<Database>, table: Table): GraphQLInputObjectType {
         const duplicate: GraphQLInputObjectType = context.inputTypes.find(type => (
             type.name === `FILTER_${NLPSchema._escapeName(context.tables, table.name)}`
         ));
@@ -308,7 +365,18 @@ export class NLPSchema<Database> {
         return inputType;
     }
 
-    private _createType(context: Context<Database>, table: Table): GraphQLObjectType {
+    private _createConnectionType(context: NLPContext<Database>, type: GraphQLObjectType): GraphQLObjectType {
+        const name = NLPSchema._escapeName(context.tables, type.name);
+        let connection = context.connections.find((connection) => (
+            connection.connectionType.name === name + "Connection"
+        ));
+        if (connection) return connection.connectionType;
+        connection = connectionDefinitions({name, nodeType: type});
+        context.connections.push(connection);
+        return connection.connectionType;
+    }
+
+    private _createType(context: NLPContext<Database>, table: Table): GraphQLObjectType {
         const duplicate: GraphQLObjectType = context.types.find(type => (
             type.name === NLPSchema._escapeName(context.tables, table.name)
         ));
@@ -330,7 +398,7 @@ export class NLPSchema<Database> {
     }
 
     //TODO optimize (cache)
-    private _createEmulatedFields(context: Context<Database>, table: Table): GraphQLFieldConfigMap<void, void> {
+    private _createEmulatedFields(context: NLPContext<Database>, table: Table): GraphQLFieldConfigMap<void, void> {
         return table.fields.reduce((fields, field) => {
             let tmp = field.refs.reduce((fields, ref) => {
                 fields[NLPSchema._escapeName(table.fields, ref.id as string, "link")] = {
@@ -375,7 +443,7 @@ export class NLPSchema<Database> {
         }, {});
     }
 
-    private _createFields(context: Context<Database>, table: Table, fields: Field[]): GraphQLFieldConfigMap<void, void> {
+    private _createFields(context: NLPContext<Database>, table: Table, fields: Field[]): GraphQLFieldConfigMap<void, void> {
         return fields.reduce((resultFields, field) => {
             console.log(`${table.name}(${field.name}) to ${field.tableNameRef}`);
 
@@ -391,7 +459,7 @@ export class NLPSchema<Database> {
                 if (!tableRef) return resultFields;
 
                 fieldName = NLPSchema._escapeName(fields, field.name, "link");
-                fieldType = new GraphQLList(this._createType(context, tableRef));
+                fieldType = this._createConnectionType(context, this._createType(context, tableRef));
                 fieldDescription = NLPSchema._createDescription({
                     id: field.id,
                     name: field.name,
@@ -401,6 +469,7 @@ export class NLPSchema<Database> {
                     `${parentTable}.${this.adapter.quote(field.name)} = ${joinTable}.${this.adapter.quote(field.fieldNameRef)}`
                 );
                 args = {
+                    ...connectionArgs,
                     where: {type: this._createFilterInputType(context, tableRef)},
                     order: {type: new GraphQLList(this._createSortingInputType(context, tableRef))}
                 };

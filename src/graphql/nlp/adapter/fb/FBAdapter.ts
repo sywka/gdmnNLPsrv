@@ -1,12 +1,18 @@
 import NestHydrationJS from "nesthydrationjs";
 import joinMonster from "join-monster";
-import {Database} from "node-firebird";
 import {GraphQLResolveInfo} from "graphql/type/definition";
-import * as dbHelper from "./dbHelper";
-import {FilterTypes, NLPSchemaTypes} from "../graphql/nlp/NLPSchema";
-import {Adapter, Context, Table, Value} from "../graphql/nlp/types";
+import {connectionFromArray} from "graphql-relay";
+import {Adapter, FilterTypes, NLPContext, NLPSchemaTypes, Table, Value} from "../../NLPSchema";
+import DBManager, {Options} from "./DBManager";
+import * as queue from "./queue";
 
-export class FBAdapter implements Adapter<Database> {
+export class FBAdapter implements Adapter<DBManager, queue.Context> {
+
+    protected options: Options;
+
+    constructor(options: Options) {
+        this.options = options;
+    }
 
     private static _convertType(type: number): NLPSchemaTypes {
         switch (type) {
@@ -30,16 +36,18 @@ export class FBAdapter implements Adapter<Database> {
         }
     }
 
-    public async connectToDB(): Promise<Database> {
-        return await dbHelper.attach();
+    public async connectToDB(): Promise<DBManager> {
+        const database = new DBManager(this.options);
+        await database.attach();
+        return database;
     }
 
-    public async disconnectFromDB(context: Context<Database>): Promise<void> {
-        await dbHelper.detach(context.db);
+    public async disconnectFromDB(context: NLPContext<DBManager>): Promise<void> {
+        await context.database.detach();
     }
 
-    public async getTables(context: Context<Database>): Promise<Table[]> {
-        const result: any[] = await dbHelper.query(context.db, `
+    public async getTables(context: NLPContext<DBManager>): Promise<Table[]> {
+        const result: any[] = await context.database.query(`
           SELECT
             TRIM(r.rdb$relation_name)                                   AS "tableName",
             TRIM(rlf.rdb$relation_name) 
@@ -144,30 +152,33 @@ export class FBAdapter implements Adapter<Database> {
         return NestHydrationJS().nest(result, definition);
     }
 
-    async resolve(source: any, args: any, context: any, info: GraphQLResolveInfo) {
-        if (source) return source[info.fieldName];
-        return joinMonster(info, {}, sql => {
-            console.log(sql);
-            return dbHelper.query(context.db, sql);
-        });
+    async resolve(source: any, args: any, context: queue.Context, info: GraphQLResolveInfo) {
+        if (source) {
+            const field = source[info.fieldName];
+            if (Array.isArray(field)) return connectionFromArray(field, args);
+            return field;
+        }
+
+        const result = await joinMonster(info, {}, (sql: string) => queue.query(context, sql));
+        return connectionFromArray(result, args);
     }
 
     public createSQLCondition(type: FilterTypes, field: string, value: Value): string {
         switch (type) {
             case FilterTypes.EQUALS:
-                return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} = ${dbHelper.escape(value)}`;
+                return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} = ${DBManager.escape(value)}`;
 
             case FilterTypes.CONTAINS:
-                return `${field} CONTAINING ${dbHelper.escape(value)}`;
+                return `${field} CONTAINING ${DBManager.escape(value)}`;
             case FilterTypes.BEGINS:
-                return `${field} STARTING WITH ${dbHelper.escape(value)}`;
+                return `${field} STARTING WITH ${DBManager.escape(value)}`;
             case FilterTypes.ENDS:
-                return `REVERSE(${field}) STARTING WITH ${dbHelper.escape(value)}`;
+                return `REVERSE(${field}) STARTING WITH ${DBManager.escape(value)}`;
 
             case FilterTypes.GREATER:
-                return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} > ${dbHelper.escape(value)}`;
+                return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} > ${DBManager.escape(value)}`;
             case FilterTypes.LESS:
-                return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} < ${dbHelper.escape(value)}`;
+                return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} < ${DBManager.escape(value)}`;
             default:
                 return "";
         }
