@@ -7,6 +7,7 @@ import DBManager, {Options} from "./DBManager";
 
 export interface GraphQLContext {
     query(query: string, params?: any[]): Promise<any[]>;
+
     execute(query: string, params?: any[]): Promise<any[]>;
 }
 
@@ -40,17 +41,7 @@ export class FBAdapter implements Adapter<DBManager, GraphQLContext> {
         }
     }
 
-    public async connectToDB(): Promise<DBManager> {
-        const database = new DBManager(this.options);
-        await database.attach();
-        return database;
-    }
-
-    public async disconnectFromDB(context: NLPContext<DBManager>): Promise<void> {
-        await context.database.detach();
-    }
-
-    public async getTables(context: NLPContext<DBManager>): Promise<Table[]> {
+    private static async _getDBTables(context: NLPContext<DBManager>): Promise<Table[]> {
         const result: any[] = await context.database.query(`
           SELECT
             TRIM(r.rdb$relation_name)                                   AS "tableName",
@@ -61,13 +52,7 @@ export class FBAdapter implements Adapter<DBManager, GraphQLContext> {
             IIF(constPrim.rdb$constraint_type = 'PRIMARY KEY', 1, null) AS "primaryFlag",
             f.rdb$null_flag                                             AS "nullFlag",
             TRIM(ref_rel_const.rdb$relation_name)                       AS "relationName",
-            TRIM(seg.rdb$field_name)                                    AS "relationFieldName",
-            
-            TRIM(REPLACE(entities.usr$name,  ',', ''))                  AS "tableIndexName",
-            TRIM(REPLACE(attr.usr$name,  ',', ''))                      AS "fieldIndexName",
-            ref_type.id                                                 AS "refKey",
-            ref_type.usr$description                                    AS "refDescription",
-            TRIM(REPLACE(ref_type_detail.usr$name,  ',', ''))           AS "refTypeIndexName"
+            TRIM(seg.rdb$field_name)                                    AS "relationFieldName"
             
           FROM rdb$relations r
           
@@ -95,24 +80,8 @@ export class FBAdapter implements Adapter<DBManager, GraphQLContext> {
                   ON ref_ref_const.rdb$constraint_name = const.rdb$constraint_name
                   LEFT JOIN rdb$relation_constraints ref_rel_const
                     ON ref_rel_const.rdb$constraint_name = ref_ref_const.rdb$const_name_uq
-                    LEFT JOIN rdb$index_segments seg ON seg.rdb$index_name = ref_rel_const.rdb$index_name
-                    
-            LEFT JOIN usr$nlp_table tables ON tables.usr$relation_name = r.rdb$relation_name
-              LEFT JOIN usr$nlp_tentities entities
-                ON entities.usr$table_key = tables.id
-                AND TRIM(REPLACE(entities.usr$name,  ',', '')) > ''
-              LEFT JOIN usr$nlp_field fields
-                ON fields.usr$table_key = tables.id
-                AND fields.usr$field_name = rlf.rdb$field_name
-                LEFT JOIN usr$nlp_tentities_attr attr
-                  ON attr.usr$field_key = fields.id
-                  AND TRIM(REPLACE(attr.usr$name,  ',', '')) > ''
-                LEFT JOIN usr$nlp_field_ref field_ref ON field_ref.USR$FIELD_KEY = fields.ID
-                  LEFT JOIN usr$nlp_ref_type ref_type ON ref_type.id = field_ref.usr$ref_type_key
-                    LEFT JOIN usr$nlp_ref_type_detail ref_type_detail
-                      ON ref_type_detail.usr$ref_type_key = ref_type.id
-                      AND TRIM(REPLACE(ref_type_detail.usr$name,  ',', '')) > ''
-                      
+                    LEFT JOIN rdb$index_segments seg ON seg.rdb$index_name = ref_rel_const.rdb$index_name  
+                         
           WHERE r.rdb$view_blr IS NULL
             AND (r.rdb$system_flag IS NULL OR r.rdb$system_flag = 0)
             AND f.rdb$field_type != 45 AND f.rdb$field_type != 261
@@ -123,8 +92,54 @@ export class FBAdapter implements Adapter<DBManager, GraphQLContext> {
 --              OR r.rdb$relation_name = 'GD_PLACE'
 --              OR r.rdb$relation_name = 'WG_POSITION'
             )
-              
+            
           ORDER BY r.rdb$relation_name
+        `);
+
+        const definition: any = [{
+            name: {column: "tableName", id: true},
+            fields: [{
+                id: {column: "fieldKey", id: true},
+                name: "fieldName",
+                primary: {column: "primaryFlag", type: "BOOLEAN", default: false},
+                type: {column: "fieldType", type: FBAdapter._convertType},
+                nonNull: {column: "nullFlag", type: "BOOLEAN", default: false},
+                tableNameRef: "relationName",
+                fieldNameRef: "relationFieldName"
+            }]
+        }];
+
+        return NestHydrationJS().nest(result, definition);
+    }
+
+    private static async _getNLPTables(context: NLPContext<DBManager>): Promise<Table[]> {
+        const result: any[] = await context.database.query(`
+          SELECT
+            TRIM(tables.usr$relation_name)                              AS "tableName",
+            TRIM(tables.usr$relation_name) 
+              || '_' || TRIM(fields.usr$field_name)                     AS "fieldKey",
+            
+            TRIM(REPLACE(entities.usr$name,  ',', ''))                  AS "tableIndexName",
+            TRIM(REPLACE(attr.usr$name,  ',', ''))                      AS "fieldIndexName",
+            ref_type.id                                                 AS "refKey",
+            ref_type.usr$description                                    AS "refDescription",
+            TRIM(REPLACE(ref_type_detail.usr$name,  ',', ''))           AS "refTypeIndexName"
+                
+          FROM usr$nlp_table tables
+          
+            LEFT JOIN usr$nlp_tentities entities
+              ON entities.usr$table_key = tables.id
+              AND TRIM(REPLACE(entities.usr$name,  ',', '')) > ''
+            LEFT JOIN usr$nlp_field fields
+              ON fields.usr$table_key = tables.id
+              LEFT JOIN usr$nlp_tentities_attr attr
+                ON attr.usr$field_key = fields.id
+                AND TRIM(REPLACE(attr.usr$name,  ',', '')) > ''
+              LEFT JOIN usr$nlp_field_ref field_ref ON field_ref.USR$FIELD_KEY = fields.ID
+                LEFT JOIN usr$nlp_ref_type ref_type ON ref_type.id = field_ref.usr$ref_type_key
+                  LEFT JOIN usr$nlp_ref_type_detail ref_type_detail
+                    ON ref_type_detail.usr$ref_type_key = ref_type.id
+                    AND TRIM(REPLACE(ref_type_detail.usr$name,  ',', '')) > ''
         `);
 
         const definition: any = [{
@@ -134,15 +149,9 @@ export class FBAdapter implements Adapter<DBManager, GraphQLContext> {
             }],
             fields: [{
                 id: {column: "fieldKey", id: true},
-                name: "fieldName",
-                primary: {column: "primaryFlag", type: "BOOLEAN", default: false},
                 indices: [{
                     key: "fieldIndexName"
                 }],
-                type: {column: "fieldType", type: FBAdapter._convertType},
-                nonNull: {column: "nullFlag", type: "BOOLEAN", default: false},
-                tableNameRef: "relationName",
-                fieldNameRef: "relationFieldName",
                 refs: [{
                     id: {column: "refKey", type: "NUMBER"},
                     name: "refDescription",
@@ -156,7 +165,42 @@ export class FBAdapter implements Adapter<DBManager, GraphQLContext> {
         return NestHydrationJS().nest(result, definition);
     }
 
-    async resolve(source: any, args: any, context: GraphQLContext, info: GraphQLResolveInfo) {
+    public async connectToDB(): Promise<DBManager> {
+        const database = new DBManager(this.options);
+        await database.attach();
+        return database;
+    }
+
+    public async disconnectFromDB(context: NLPContext<DBManager>): Promise<void> {
+        await context.database.detach();
+    }
+
+    public async getTables(context: NLPContext<DBManager>): Promise<Table[]> {
+        const dbTables = await FBAdapter._getDBTables(context);
+        try {
+            const nlpTables = await FBAdapter._getNLPTables(context);
+
+            nlpTables.forEach((nlpTable) => {
+                const table = dbTables.find((dbTable) => dbTable.name === nlpTable.name);
+                if (table) {
+                    table.indices = nlpTable.indices;
+                    nlpTable.fields.forEach((nlpField) => {
+                        const field = table.fields.find((tableField) => tableField.id === nlpField.id);
+                        if (field) {
+                            field.indices = nlpField.indices;
+                            field.refs = nlpField.refs;
+                        }
+                    });
+                }
+            });
+        } catch (error) {
+            console.error(`An error occurred while reading the nlp schema: ${error.message}`);
+        }
+
+        return dbTables;
+    }
+
+    public async resolve(source: any, args: any, context: GraphQLContext, info: GraphQLResolveInfo) {
         if (source) {
             const field = source[info.fieldName];
             if (Array.isArray(field)) return connectionFromArray(field, args);

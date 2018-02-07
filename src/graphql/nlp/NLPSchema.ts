@@ -24,7 +24,7 @@ export interface Index {
 export interface BaseIndexing {
     readonly id: ID;
     readonly name: string;
-    readonly indices: Index[];
+    indices?: Index[];
 }
 
 export interface Ref extends BaseIndexing {
@@ -36,7 +36,7 @@ export interface Field extends BaseIndexing {
     readonly nonNull: boolean;
     readonly tableNameRef: string;
     readonly fieldNameRef: string;
-    readonly refs: Ref[];
+    refs?: Ref[];
 }
 
 export interface Table extends BaseIndexing {
@@ -122,11 +122,14 @@ export class NLPSchema<Database, Context> {
     }
 
     private static _createDescription(base: BaseIndexing): string {
+        const description = base.name ? base.name : "";
+        if (!base.indices) return description;
+
         return base.indices.reduce((strOfIndices, index) => {
             if (strOfIndices) strOfIndices += ",";
             strOfIndices += index.key;
             return strOfIndices;
-        }, base.name ? base.name : "");
+        }, description);
     }
 
     private static _createObjectOrderBy(order: any[]): { [fieldName: string]: string } {
@@ -400,6 +403,7 @@ export class NLPSchema<Database, Context> {
     //TODO optimize (cache)
     private _createEmulatedFields(context: NLPContext<Database>, table: Table): GraphQLFieldConfigMap<void, void> {
         return table.fields.reduce((fields, field) => {
+            if (!field.refs) return fields;
             let tmp = field.refs.reduce((fields, ref) => {
                 fields[NLPSchema._escapeName(table.fields, ref.id as string, "link")] = {
                     type: new GraphQLNonNull(
@@ -410,7 +414,7 @@ export class NLPSchema<Database, Context> {
                             description: ref.name,
                             fields: () => {
                                 const refFields = table.fields.reduce((fields, field) => {
-                                    if (field.refs.find((item) => item.id === ref.id)) {
+                                    if (field.refs && field.refs.find((item) => item.id === ref.id)) {
                                         fields.push(field);
                                     }
                                     return fields;
@@ -463,7 +467,7 @@ export class NLPSchema<Database, Context> {
                 fieldDescription = NLPSchema._createDescription({
                     id: field.id,
                     name: field.name,
-                    indices: field.refs.length ? field.refs[0].indices : []     //TODO refs???
+                    indices: field.refs && field.refs.length ? field.refs[0].indices : null
                 });
                 sqlJoin = (parentTable, joinTable, args) => (
                     `${parentTable}.${this.adapter.quote(field.name)} = ${joinTable}.${this.adapter.quote(field.fieldNameRef)}`
