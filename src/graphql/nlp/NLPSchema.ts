@@ -278,6 +278,32 @@ export class NLPSchema<Database, Context> {
         ));
         if (duplicate) return duplicate;
 
+        const equalsType = new GraphQLInputObjectType({
+            name: `EQUALS_${NLPSchema._escapeName(context.tables, table.name)}`,
+            fields: table.fields.reduce((fields, field) => {
+                fields[NLPSchema._escapeName(table.fields, field.name)] = {
+                    type: NLPSchema._convertToGraphQLType(field.type),
+                    description: NLPSchema._createDescription(field)
+                };
+                return fields;
+            }, {})
+        });
+
+        const containsType = new GraphQLInputObjectType({
+            name: `CONTAINS_${NLPSchema._escapeName(context.tables, table.name)}`,
+            fields: table.fields.reduce((fields, field) => {
+                switch (field.type) {
+                    case NLPSchemaTypes.STRING:
+                        fields[NLPSchema._escapeName(table.fields, field.name)] = {
+                            type: NLPSchema._convertToGraphQLType(field.type),
+                            description: NLPSchema._createDescription(field)
+                        };
+                        break;
+                }
+                return fields;
+            }, {})
+        });
+
         const nullableFieldsEnumType = new GraphQLEnumType({
             name: `IS_NULL_FIELDS_${NLPSchema._escapeName(context.tables, table.name)}`,
             values: table.fields.reduce((values, field) => {
@@ -293,7 +319,7 @@ export class NLPSchema<Database, Context> {
 
         const beginsOrEndsType = new GraphQLInputObjectType({
             name: `BEGINS_OR_ENDS_${NLPSchema._escapeName(context.tables, table.name)}`,
-            fields: () => table.fields.reduce((fields, field) => {
+            fields: table.fields.reduce((fields, field) => {
                 switch (field.type) {
                     case NLPSchemaTypes.STRING:
                         fields[NLPSchema._escapeName(table.fields, field.name)] = {
@@ -308,7 +334,7 @@ export class NLPSchema<Database, Context> {
 
         const greaterOrLessType = new GraphQLInputObjectType({
             name: `GREATER_OR_LESS_${NLPSchema._escapeName(context.tables, table.name)}`,
-            fields: () => table.fields.reduce((fields, field) => {
+            fields: table.fields.reduce((fields, field) => {
                 switch (field.type) {
                     case NLPSchemaTypes.DATE:
                     case NLPSchemaTypes.INT:
@@ -326,39 +352,23 @@ export class NLPSchema<Database, Context> {
         const inputType = new GraphQLInputObjectType({
             name: `FILTER_${NLPSchema._escapeName(context.tables, table.name)}`,
             fields: () => ({
-                [FilterTypes.EQUALS]: {
-                    type: new GraphQLInputObjectType({
-                        name: `EQUALS_${NLPSchema._escapeName(context.tables, table.name)}`,
-                        fields: () => table.fields.reduce((fields, field) => {
-                            fields[NLPSchema._escapeName(table.fields, field.name)] = {
-                                type: NLPSchema._convertToGraphQLType(field.type),
-                                description: NLPSchema._createDescription(field)
-                            };
-                            return fields;
-                        }, {})
-                    })
-                },
-                [FilterTypes.CONTAINS]: {
-                    type: new GraphQLInputObjectType({
-                        name: `CONTAINS_${NLPSchema._escapeName(context.tables, table.name)}`,
-                        fields: () => table.fields.reduce((fields, field) => {
-                            switch (field.type) {
-                                case NLPSchemaTypes.STRING:
-                                    fields[NLPSchema._escapeName(table.fields, field.name)] = {
-                                        type: NLPSchema._convertToGraphQLType(field.type),
-                                        description: NLPSchema._createDescription(field)
-                                    };
-                                    break;
-                            }
-                            return fields;
-                        }, {})
-                    })
-                },
-                [FilterTypes.BEGINS]: {type: beginsOrEndsType},
-                [FilterTypes.ENDS]: {type: beginsOrEndsType},
-                [FilterTypes.GREATER]: {type: greaterOrLessType},
-                [FilterTypes.LESS]: {type: greaterOrLessType},
-                isNull: {type: nullableFieldsEnumType},
+                ...Object.keys(equalsType.getFields()).length ? {
+                    [FilterTypes.EQUALS]: {type: equalsType}
+                } : {},
+                ...Object.keys(containsType.getFields()).length ? {
+                    [FilterTypes.CONTAINS]: {type: containsType}
+                } : {},
+                ...Object.keys(beginsOrEndsType.getFields()).length ? {
+                    [FilterTypes.BEGINS]: {type: beginsOrEndsType},
+                    [FilterTypes.ENDS]: {type: beginsOrEndsType}
+                } : {},
+                ...Object.keys(greaterOrLessType.getFields()).length ? {
+                    [FilterTypes.GREATER]: {type: greaterOrLessType},
+                    [FilterTypes.LESS]: {type: greaterOrLessType}
+                } : {},
+                ...nullableFieldsEnumType.getValues().length ? {
+                    isNull: {type: nullableFieldsEnumType}
+                } : {},
                 or: {type: new GraphQLList(inputType)},
                 and: {type: new GraphQLList(inputType)},
                 not: {type: new GraphQLList(inputType)}
@@ -405,24 +415,25 @@ export class NLPSchema<Database, Context> {
         return table.fields.reduce((fields, field) => {
             if (!field.refs) return fields;
             let tmp = field.refs.reduce((fields, ref) => {
-                fields[NLPSchema._escapeName(table.fields, ref.id as string, "link")] = {
-                    type: new GraphQLNonNull(
-                        new GraphQLObjectType({
-                            name: NLPSchema._escapeName(context.tables, `${table.name}_${ref.id}`, "EMULATED"),
-                            sqlTable: table.name,
-                            uniqueKey: NLPSchema._findPrimaryFieldName(table),
-                            description: ref.name,
-                            fields: () => {
-                                const refFields = table.fields.reduce((fields, field) => {
-                                    if (field.refs && field.refs.find((item) => item.id === ref.id)) {
-                                        fields.push(field);
-                                    }
-                                    return fields;
-                                }, []);
-                                return this._createFields(context, table, refFields);
+                const emulatedType = new GraphQLObjectType({
+                    name: NLPSchema._escapeName(context.tables, `${table.name}_${ref.id}`, "EMULATED"),
+                    sqlTable: table.name,
+                    uniqueKey: NLPSchema._findPrimaryFieldName(table),
+                    description: ref.name,
+                    fields: () => {
+                        const refFields = table.fields.reduce((fields, field) => {
+                            if (field.refs && field.refs.find((item) => item.id === ref.id)) {
+                                fields.push(field);
                             }
-                        })
-                    ),
+                            return fields;
+                        }, []);
+                        return this._createFields(context, table, refFields);
+                    }
+                });
+                if (!Object.keys(emulatedType.getFields()).length) return fields;
+
+                fields[NLPSchema._escapeName(table.fields, ref.id as string, "link")] = {
+                    type: new GraphQLNonNull(emulatedType),
                     description: NLPSchema._createDescription({
                         id: ref.id,
                         name: null,
@@ -454,14 +465,13 @@ export class NLPSchema<Database, Context> {
             let fieldName: string;
             let fieldType: GraphQLType;
             let fieldDescription: string;
-            let sqlJoin;
-            let args;
-            if (field.tableNameRef) {
-                const tableRef: Table = context.tables.find((table) => (
+            let sqlJoin: (parentTable: string, joinTable: string, args: any) => string;
+            let args: any;
+            let tableRef: Table;
+            if (field.tableNameRef && (tableRef = context.tables.find((table) => (
                     table.name === NLPSchema._escapeName(context.tables, field.tableNameRef)
-                ));
-                if (!tableRef) return resultFields;
-
+                )))
+            ) {
                 fieldName = NLPSchema._escapeName(fields, field.name, "link");
                 fieldType = this._createConnectionType(context, this._createType(context, tableRef));
                 fieldDescription = NLPSchema._createDescription({
