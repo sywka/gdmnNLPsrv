@@ -2,7 +2,7 @@ import NestHydrationJS from "nesthydrationjs";
 import joinMonster from "join-monster";
 import {GraphQLResolveInfo} from "graphql/type/definition";
 import {connectionFromArray} from "graphql-relay";
-import {Adapter, FilterTypes, NLPContext, NLPSchemaTypes, Table, Value} from "../../NLPSchema";
+import {Adapter, Args, FilterTypes, NLPSchemaTypes, Table, Value} from "../../NLPSchema";
 import DBManager, {Options} from "./DBManager";
 
 export interface GraphQLContext {
@@ -11,7 +11,7 @@ export interface GraphQLContext {
     execute(query: string, params?: any[]): Promise<any[]>;
 }
 
-export class FBAdapter implements Adapter<DBManager, GraphQLContext> {
+export class FBAdapter implements Adapter<GraphQLContext> {
 
     protected options: Options;
 
@@ -41,8 +41,8 @@ export class FBAdapter implements Adapter<DBManager, GraphQLContext> {
         }
     }
 
-    private static async _getDBTables(context: NLPContext<DBManager>): Promise<Table[]> {
-        const result: any[] = await context.database.query(`
+    private static async _getDBTables(dbManager: DBManager): Promise<Table[]> {
+        const result: any[] = await dbManager.query(`
           SELECT
             TRIM(r.rdb$relation_name)                                   AS "tableName",
             TRIM(rlf.rdb$relation_name) 
@@ -112,8 +112,8 @@ export class FBAdapter implements Adapter<DBManager, GraphQLContext> {
         return NestHydrationJS().nest(result, definition);
     }
 
-    private static async _getNLPTables(context: NLPContext<DBManager>): Promise<Table[]> {
-        const result: any[] = await context.database.query(`
+    private static async _getNLPTables(dbManager: DBManager): Promise<Table[]> {
+        const result: any[] = await dbManager.query(`
           SELECT
             TRIM(tables.usr$relation_name)                              AS "tableName",
             TRIM(tables.usr$relation_name) 
@@ -165,42 +165,46 @@ export class FBAdapter implements Adapter<DBManager, GraphQLContext> {
         return NestHydrationJS().nest(result, definition);
     }
 
-    public async connectToDB(): Promise<DBManager> {
-        const database = new DBManager(this.options);
-        await database.attach();
-        return database;
+    quote(str: string): string {
+        return `"${str}"`;
     }
 
-    public async disconnectFromDB(context: NLPContext<DBManager>): Promise<void> {
-        await context.database.detach();
-    }
-
-    public async getTables(context: NLPContext<DBManager>): Promise<Table[]> {
-        const dbTables = await FBAdapter._getDBTables(context);
+    public async getTables(): Promise<Table[]> {
+        const dbManager = new DBManager(this.options);
         try {
-            const nlpTables = await FBAdapter._getNLPTables(context);
+            await dbManager.attach();
+            const dbTables = await FBAdapter._getDBTables(dbManager);
 
-            nlpTables.forEach((nlpTable) => {
-                const table = dbTables.find((dbTable) => dbTable.name === nlpTable.name);
-                if (table) {
-                    table.indices = nlpTable.indices;
-                    nlpTable.fields.forEach((nlpField) => {
-                        const field = table.fields.find((tableField) => tableField.id === nlpField.id);
-                        if (field) {
-                            field.indices = nlpField.indices;
-                            field.refs = nlpField.refs;
-                        }
-                    });
-                }
-            });
-        } catch (error) {
-            console.error(`An error occurred while reading the nlp schema: ${error.message}`);
+            try {
+                const nlpTables = await FBAdapter._getNLPTables(dbManager);
+
+                nlpTables.forEach((nlpTable) => {
+                    const table = dbTables.find((dbTable) => dbTable.name === nlpTable.name);
+                    if (table) {
+                        table.indices = nlpTable.indices;
+                        nlpTable.fields.forEach((nlpField) => {
+                            const field = table.fields.find((tableField) => tableField.id === nlpField.id);
+                            if (field) {
+                                field.indices = nlpField.indices;
+                                field.refs = nlpField.refs;
+                            }
+                        });
+                    }
+                });
+                return dbTables;
+            } catch (error) {
+                console.error(`An error occurred while reading the nlp schema: ${error.message}`);
+            }
+        } finally {
+            try {
+                await dbManager.detach();
+            } catch (error) {
+                console.log(error);
+            }
         }
-
-        return dbTables;
     }
 
-    public async resolve(source: any, args: any, context: GraphQLContext, info: GraphQLResolveInfo) {
+    public async resolve(source: any, args: Args, context: GraphQLContext, info: GraphQLResolveInfo) {
         if (source) {
             const field = source[info.fieldName];
             if (Array.isArray(field)) return connectionFromArray(field, args);
@@ -230,9 +234,5 @@ export class FBAdapter implements Adapter<DBManager, GraphQLContext> {
             default:
                 return "";
         }
-    }
-
-    quote(str: string): string {
-        return `"${str}"`;
     }
 }

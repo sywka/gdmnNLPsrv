@@ -16,6 +16,7 @@ const options: Options = {
 };
 
 const nlpSchema = new NLPSchema({adapter: new FBAdapter(options)});
+nlpSchema.createSchema().catch(console.error);
 
 const router = express.Router();
 

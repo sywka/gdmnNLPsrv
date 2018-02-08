@@ -1,4 +1,4 @@
-import firebird from "node-firebird";
+import firebird, {SequentialCallback} from "node-firebird";
 import * as path from "path";
 
 export type Options = firebird.Options;
@@ -134,6 +134,15 @@ export default class DBManager extends Base<firebird.Database> {
         return new Promise<Transaction>((resolve, reject) => {
             this.db.transaction(isolation, (err, transaction) => {
                 err ? reject(err) : resolve(new Transaction(transaction));
+            });
+        });
+    }
+
+    public async sequentially(query: string, params: any[], rowCallback: SequentialCallback): Promise<void> {
+        if (!this.db) throw new Error("Database need created");
+        return new Promise<void>((resolve, reject) => {
+            this.db.sequentially(query, params, rowCallback, (err) => {
+                err ? reject(err) : resolve();
             });
         });
     }
