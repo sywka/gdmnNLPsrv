@@ -30,6 +30,7 @@
     "node-firebird": "^0.8.4",
     "path": "^0.12.7",
     "pm2": "^2.9.3",
+    "progress": "^2.0.0",
     "promise-queue": "^2.2.5",
     "pug": "^2.0.0-rc.4",
     "serve-static": "^1.13.1"
@@ -46,6 +47,7 @@
     "@types/hapi": "^16.1.12",
     "@types/koa": "^2.0.44",
     "@types/morgan": "^1.7.35",
+    "@types/progress": "^2.0.1",
     "@types/promise-queue": "^2.2.0",
     "typescript": "^2.7.1"
   }

@@ -15,8 +15,10 @@ const options: Options = {
     database: config.get("db.path")
 };
 
-const nlpSchema = new NLPSchema({adapter: new FBAdapter(options)});
-nlpSchema.createSchema().catch(console.error);
+const nlpSchema = new NLPSchema({
+    adapter: new FBAdapter(options)
+});
+nlpSchema.createSchema().catch(console.error);  //tmp
 
 const router = express.Router();
 

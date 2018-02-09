@@ -14,6 +14,7 @@ import {
 import GraphQLDate from "graphql-date";
 import {GraphQLFieldConfigMap, GraphQLResolveInfo, GraphQLType} from "graphql/type/definition";
 import {connectionArgs, connectionDefinitions, GraphQLConnectionDefinitions} from "graphql-relay";
+import Progress from "./adapter/fb/Progress";
 
 type ID = number | string;
 
@@ -63,6 +64,9 @@ export interface NLPContext {
     types: GraphQLObjectType[];
     inputTypes: GraphQLInputObjectType[];
     connections: GraphQLConnectionDefinitions[];
+    progress: {
+        tableTick: (table: Table) => void;
+    }
 }
 
 export class NLPSchema<Context> {
@@ -135,20 +139,42 @@ export class NLPSchema<Context> {
         }, {});
     }
 
-    public async getSchema(): Promise<GraphQLSchema> {
-        if (!this._schema) await this.createSchema();
+    public async getSchema(hiddenProgress?: boolean): Promise<GraphQLSchema> {
+        if (!this._schema) await this.createSchema(hiddenProgress);
         return this._schema;
     }
 
-    public async createSchema(): Promise<GraphQLSchema> {
-        console.log("Creating NLP GraphQL schema...");
+    public async createSchema(hiddenProgress?: boolean): Promise<GraphQLSchema> {
+        const total = 100;
+        const progress = new Progress(total + 10, hiddenProgress);
+        const context: NLPContext = {
+            tables: [],
+            types: [],
+            inputTypes: [],
+            connections: [],
+            progress: {
+                tableTick: (table: Table) => {
+                    progress.tick(`Creating GraphQL type: ${table.name}`, total / context.tables.length);
+                }
+            }
+        };
+        try {
+            console.log("Creating NLP GraphQL schema...");
 
-        const context: NLPContext = {tables: [], types: [], inputTypes: [], connections: []};
-        context.tables = await this._adapter.getTables();
-        this._schema = this._createSchema(context);
+            progress.tick("Reading database schema...");
+            context.tables = await this._adapter.getTables();
 
-        console.log("NLP GraphQL schema created.");
-        return this._schema;
+            progress.tick("Creating GraphQL schema...", 8);
+            this._schema = this._createSchema(context);
+            progress.tick("Done.");
+
+            console.log("NLP GraphQL schema created.");
+
+            return this._schema;
+        } catch (error) {
+            progress.terminate(error.message);
+            throw error;
+        }
     }
 
     private _createSQLWhere(table: Table, tableAlias: string, where: any): string {
@@ -379,7 +405,8 @@ export class NLPSchema<Context> {
         ));
         if (duplicate) return duplicate;
 
-        const type: GraphQLObjectType = new GraphQLObjectType({
+        context.progress.tableTick(table);
+        const type: GraphQLObjectType = new GraphQLObjectType({     //TODO not create if fields empty
             name: NLPSchema._escapeName(context.tables, table.name),
             sqlTable: table.name,
             uniqueKey: NLPSchema._findPrimaryFieldName(table),
