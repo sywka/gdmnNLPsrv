@@ -170,9 +170,9 @@ export class FBAdapter implements Adapter<GraphQLContext> {
     }
 
     public async getTables(): Promise<Table[]> {
-        const dbManager = new DBManager(this.options);
+        const dbManager = new DBManager();
         try {
-            await dbManager.attach();
+            await dbManager.attach(this.options);
             const dbTables = await FBAdapter._getDBTables(dbManager);
 
             try {

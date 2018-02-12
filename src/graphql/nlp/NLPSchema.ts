@@ -71,11 +71,16 @@ export interface NLPContext {
 
 export class NLPSchema<Context> {
 
-    protected _schema: GraphQLSchema;
     protected _adapter: Adapter<Context>;
 
     constructor(options: Options<Context>) {
         this._adapter = options.adapter;
+    }
+
+    protected _schema: GraphQLSchema;
+
+    get schema(): GraphQLSchema {
+        return this._schema;
     }
 
     private static _convertToGraphQLType(type: NLPSchemaTypes): GraphQLScalarType {
@@ -137,11 +142,6 @@ export class NLPSchema<Context> {
             }, {});
             return {...object, ...tmp};
         }, {});
-    }
-
-    public async getSchema(hiddenProgress?: boolean): Promise<GraphQLSchema> {
-        if (!this._schema) await this.createSchema(hiddenProgress);
-        return this._schema;
     }
 
     public async createSchema(hiddenProgress?: boolean): Promise<GraphQLSchema> {

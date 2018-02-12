@@ -1,14 +1,14 @@
-import firebird, {SequentialCallback} from "node-firebird";
-import * as path from "path";
+import path from "path";
+import firebird from "node-firebird";
 
 export type Options = firebird.Options;
 
-export abstract class Base<DB extends (firebird.Database | firebird.Transaction)> {
+abstract class Base<DB extends (firebird.Database | firebird.Transaction)> {
 
-    protected db: DB;
+    protected _db: DB;
 
     constructor(db: DB) {
-        this.db = db;
+        this._db = db;
     }
 
     public static async readBlob(blobFieldResult: (callback: (err, name, event) => void) => void): Promise<string> {
@@ -29,45 +29,45 @@ export abstract class Base<DB extends (firebird.Database | firebird.Transaction)
     }
 
     public async query(query: string, params?: any[]): Promise<any[]> {
-        if (!this.db) throw new Error("Database need created");
+        if (!this._db) throw new Error("Database need created");
         return new Promise<any[]>((resolve, reject) => {
-            this.db.query(query, params, (err, result) => {
+            this._db.query(query, params, (err, result) => {
                 err ? reject(err) : resolve(result);
             });
         });
     }
 
     public async execute(query: string, params?: any[]): Promise<any[]> {
-        if (!this.db) throw new Error("Database need created");
+        if (!this._db) throw new Error("Database need created");
         return new Promise<any[]>((resolve, reject) => {
-            this.db.execute(query, params, (err, result) => {
+            this._db.execute(query, params, (err, result) => {
                 err ? reject(err) : resolve(result);
             });
         });
     }
 }
 
-export class Transaction extends Base<firebird.Transaction> {
+class Transaction extends Base<firebird.Transaction> {
 
     public isInTransaction(): boolean {
-        return Boolean(this.db);
+        return Boolean(this._db);
     }
 
     public async commit(): Promise<void> {
-        if (!this.db) throw new Error("Transaction need created");
+        if (!this._db) throw new Error("Transaction need created");
         return new Promise<void>((resolve, reject) => {
-            this.db.commit((err) => {
+            this._db.commit((err) => {
                 if (err) return reject(err);
-                this.db = null;
+                this._db = null;
                 resolve();
             });
         });
     }
 
     public async rollback(): Promise<void> {
-        if (!this.db) throw new Error("Transaction need created");
+        if (!this._db) throw new Error("Transaction need created");
         return new Promise<void>((resolve, reject) => {
-            this.db.rollback((err) => {
+            this._db.rollback((err) => {
                 if (err) return reject(err);
                 resolve();
             });
@@ -75,75 +75,115 @@ export class Transaction extends Base<firebird.Transaction> {
     }
 }
 
-export default class DBManager extends Base<firebird.Database> {
+export class Database extends Base<firebird.Database> {
 
-    protected _options: Options;
-
-    constructor(options: Options) {
+    constructor() {
         super(null);
-
-        this._options = {
-            ...options,
-            database: path.resolve(process.cwd(), options.database)
-        };
     }
 
     public static escape(value: any): string {
         return firebird.escape(value);
     }
 
-    public isAttached(): boolean {
-        return Boolean(this.db);
+    protected static bindOptions(options: Options): Options {
+        return {
+            ...options,
+            database: path.resolve(process.cwd(), options.database)
+        };
     }
 
-    public async attachOrCreate(): Promise<void> {
-        if (this.db) throw new Error("Database already created");
+    public isAttached(): boolean {
+        return Boolean(this._db);
+    }
+
+    public async attachOrCreate(options: Options): Promise<void> {
+        if (this._db) throw new Error("Database already created");
         return new Promise<void>((resolve, reject) => {
-            firebird.attachOrCreate(this._options, (err, db) => {
+            firebird.attachOrCreate(Database.bindOptions(options), (err, db) => {
                 if (err) return reject(err);
-                this.db = db;
+                this._db = db;
                 resolve();
             });
         });
     }
 
-    public async attach(): Promise<void> {
-        if (this.db) throw new Error("Database already created");
+    public async attach(options: Options): Promise<void> {
+        if (this._db) throw new Error("Database already created");
         return new Promise<void>((resolve, reject) => {
-            firebird.attach(this._options, (err, db) => {
+            firebird.attach(Database.bindOptions(options), (err, db) => {
                 if (err) return reject(err);
-                this.db = db;
+                this._db = db;
                 resolve();
             });
         });
     }
 
     public async detach(): Promise<void> {
-        if (!this.db) throw new Error("Database need created");
+        if (!this._db) throw new Error("Database need created");
         return new Promise<void>((resolve, reject) => {
-            this.db.detach((err) => {
+            this._db.detach((err) => {
                 if (err) return reject(err);
-                this.db = null;
+                this._db = null;
                 resolve();
             });
         });
     }
 
     public async transaction(isolation?: firebird.Isolation): Promise<Transaction> {
-        if (!this.db) throw new Error("Database need created");
+        if (!this._db) throw new Error("Database need created");
         return new Promise<Transaction>((resolve, reject) => {
-            this.db.transaction(isolation, (err, transaction) => {
+            this._db.transaction(isolation, (err, transaction) => {
                 err ? reject(err) : resolve(new Transaction(transaction));
             });
         });
     }
 
-    public async sequentially(query: string, params: any[], rowCallback: SequentialCallback): Promise<void> {
-        if (!this.db) throw new Error("Database need created");
+    public async sequentially(query: string, params: any[], rowCallback: firebird.SequentialCallback): Promise<void> {
+        if (!this._db) throw new Error("Database need created");
         return new Promise<void>((resolve, reject) => {
-            this.db.sequentially(query, params, rowCallback, (err) => {
+            this._db.sequentially(query, params, rowCallback, (err) => {
                 err ? reject(err) : resolve();
             });
         });
+    }
+}
+
+export default class DBManager extends Database {
+
+    protected static _connectionPool: firebird.ConnectionPool;
+
+    public static isConnectionPoolCreated(): boolean {
+        return Boolean(this._connectionPool);
+    }
+
+    public static async createConnectionPool(options: Options, max: number): Promise<void> {
+        if (DBManager._connectionPool) throw new Error("Connection pool already created");
+        return new Promise<void>((resolve, reject) => {
+            DBManager._connectionPool = firebird.pool(max, Database.bindOptions(options), null);
+            resolve();
+        });
+    }
+
+    public static async destroyConnectionPool(): Promise<void> {
+        if (!DBManager._connectionPool) throw new Error("Connection pool need created");
+        return new Promise<void>((resolve, reject) => {
+            DBManager._connectionPool.destroy();
+            DBManager._connectionPool = null;
+            resolve();
+        });
+    }
+
+    public async attachFromPool(): Promise<void> {
+        if (!DBManager._connectionPool) throw new Error("Connection pool need created");
+        if (this._db) throw new Error("Database already created");
+        if (DBManager._connectionPool) {
+            return new Promise<void>((resolve, reject) => {
+                DBManager._connectionPool.get((err, db) => {
+                    if (err) return reject(err);
+                    this._db = db;
+                    resolve();
+                });
+            });
+        }
     }
 }
