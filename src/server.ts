@@ -1,51 +1,54 @@
+import bodyParser from "body-parser";
 import config from "config";
-import http from "http";
-import https from "https";
-import path from "path";
-import fs from "fs";
-import app from "./app";
+import cookieParser from "cookie-parser";
+import cors from "cors";
+import express from "express";
+import serveStatic from "serve-static";
+import morgan from "morgan";
+import {CodeError, ErrorCode, getErrorMiddleware, HttpError, ResponseType} from "./middlewares/errorMiddleware";
+import Api from "./routers/Api";
+import BaseRouter from "./BaseRouter";
 
-if (config.get("server.http.enabled")) {
-    const server = http.createServer(app);
-    const port = <number>config.get("server.http.port");
-    const host = <string>config.get("server.http.host");
+export default class Server extends BaseRouter {
 
-    server.listen(port, host);
-    server.on("error", (error: NodeJS.ErrnoException) => errorHandler(error, port));
-    server.on("listening", () => {
-        console.log(`Listening on http://${server.address().address}:${server.address().port}; env: ${app.get("env")}`);
-    });
-}
+    constructor() {
+        super();
 
-if (config.get("server.https.enabled")) {
-    const key = fs.readFileSync(path.resolve(process.cwd(), config.get("server.https.keyPath")));
-    const cert = fs.readFileSync(path.resolve(process.cwd(), config.get("server.https.certPath")));
-
-    const server = https.createServer({key, cert}, app);
-    const port = <number>config.get("server.http.port");
-    const host = <string>config.get("server.http.host");
-
-    server.listen(port, host);
-    server.on("error", (error: NodeJS.ErrnoException) => errorHandler(error, port));
-    server.on("listening", () => {
-        console.log(`Listening on https://${server.address().address}:${server.address().port}; env: ${app.get("env")}`);
-    });
-}
-
-function errorHandler(error: NodeJS.ErrnoException, port: number): void {
-    if (error.syscall !== "listen") {
-        throw error;
+        this._app = express();
+        Server.config(this._app);
+        this._app.use(this.router);
+        this.errorHandler(this._app);
     }
-    switch (error.code) {
-        case "EACCES":
-            console.error(`Port :${port} requires elevated privileges`);
-            process.exit(1);
-            break;
-        case "EADDRINUSE":
-            console.error(`Port :${port} is already in use`);
-            process.exit(1);
-            break;
-        default:
-            throw error;
+
+    private _app: express.Application;
+
+    get app(): express.Application {
+        return this._app;
+    }
+
+    private static config(app: express.Application): void {
+        app.set("views", "./src/views");
+        app.set("view engine", "pug");
+
+        app.use(morgan("dev"));
+        app.use(bodyParser.json());
+        app.use(bodyParser.urlencoded({extended: false}));
+        app.use(serveStatic(config.get("server.publicDir")));
+        app.use(cookieParser());
+
+        if (!process.env.NODE_ENV) app.use(cors());
+    }
+
+    protected routes(router: express.Router) {
+        router.use("/api", new Api().router);
+    }
+
+    private errorHandler(app: express.Application) {
+        app.use((req, res, next) => {
+            const error = new HttpError(ResponseType.HTML, 404, new CodeError(ErrorCode.NOT_FOUND_ERROR_CODE,
+                `${req.originalUrl} not found`));
+            next(error);
+        });
+        app.use(getErrorMiddleware());
     }
 }

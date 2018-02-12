@@ -3,8 +3,8 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "devServer": "yarn run build&&node ./src/server.js",
-    "prodServer": "yarn run build&&set NODE_ENV=production&&node ./src/server.js",
+    "devServer": "yarn run build&&node ./src/start.js",
+    "prodServer": "yarn run build&&set NODE_ENV=production&&node ./src/start.js",
     "build": "tsc",
     "start": "yarn run prodServer",
     "startPM2Server": "pm2 start prod.config.pm2.json",
@@ -36,6 +36,7 @@
     "serve-static": "^1.13.1"
   },
   "devDependencies": {
+    "@types/body-parser": "^1.16.8",
     "@types/config": "^0.0.33",
     "@types/cookie-parser": "^1.4.1",
     "@types/cors": "^2.8.3",
