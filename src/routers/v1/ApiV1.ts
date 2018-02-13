@@ -1,4 +1,4 @@
-import express from "express";
+import express, {NextFunction, Request, Response} from "express";
 import config from "config";
 import graphqlHTTP from "express-graphql";
 import {express as expressMiddleware} from "graphql-voyager/middleware";
@@ -30,9 +30,10 @@ export default class ApiV1 extends BaseRouter {
     }
 
     protected routes(router: express.Router) {
-        router.use("/schema/viewer", (req, res, next) => {
+        let viewerPath = "/schema/viewer";
+        router.use(viewerPath, (req: Request, res: Response, next: NextFunction) => {
             expressMiddleware({
-                endpointUrl: "/api/v1",
+                endpointUrl: req.baseUrl.replace(viewerPath, ""),
                 displayOptions: req.query
             })(req, res, next);
         });

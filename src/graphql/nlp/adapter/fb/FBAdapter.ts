@@ -207,12 +207,20 @@ export class FBAdapter implements Adapter<GraphQLContext> {
     public async resolve(source: any, args: Args, context: GraphQLContext, info: GraphQLResolveInfo) {
         if (source) {
             const field = source[info.fieldName];
-            if (Array.isArray(field)) return connectionFromArray(field, args);
+            if (Array.isArray(field)) {
+                return {
+                    total: field.length,
+                    ...connectionFromArray(field, args)
+                };
+            }
             return field;
         }
 
         const result = await joinMonster(info, {}, (sql: string) => context.query(sql));
-        return connectionFromArray(result, args);
+        return {
+            total: result.length,
+            ...connectionFromArray(result, args)
+        };
     }
 
     public createSQLCondition(type: FilterTypes, field: string, value: Value): string {

@@ -394,7 +394,13 @@ export class NLPSchema<Context> {
             connection.connectionType.name === name + "Connection"
         ));
         if (connection) return connection.connectionType;
-        connection = connectionDefinitions({name, nodeType: type});
+        connection = connectionDefinitions({
+            name,
+            nodeType: type,
+            connectionFields: {
+                total: {type: GraphQLInt}
+            }
+        });
         context.connections.push(connection);
         return connection.connectionType;
     }
