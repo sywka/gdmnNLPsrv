@@ -20,8 +20,5 @@
     "host": "localhost",
     "port": 3050,
     "path": "./DEFAULT.FDB"
-  },
-  "auth": {
-    "jwtSecret": "DefaultJWTSecret"
   }
 }

@@ -9,6 +9,8 @@
 *.FDB
 .idea
 
+# Visual Studio Code
+.vscode/*
 
 # Logs
 logs
