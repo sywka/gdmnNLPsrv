@@ -2,7 +2,7 @@ import bodyParser from "body-parser";
 import config from "config";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import express from "express";
+import express, {Router, Application} from "express";
 import serveStatic from "serve-static";
 import morgan from "morgan";
 import {CodeError, ErrorCode, getErrorMiddleware, HttpError, ResponseType} from "./middlewares/errorMiddleware";
@@ -20,13 +20,13 @@ export default class Server extends BaseRouter {
         this.errorHandler(this._app);
     }
 
-    private _app: express.Application;
+    private _app: Application;
 
-    get app(): express.Application {
+    get app(): Application {
         return this._app;
     }
 
-    private static config(app: express.Application): void {
+    private static config(app: Application): void {
         app.set("views", "./src/views");
         app.set("view engine", "pug");
 
@@ -39,11 +39,11 @@ export default class Server extends BaseRouter {
         if (!process.env.NODE_ENV) app.use(cors());
     }
 
-    protected routes(router: express.Router) {
+    protected routes(router: Router) {
         router.use("/api", new Api().router);
     }
 
-    private errorHandler(app: express.Application) {
+    private errorHandler(app: Application) {
         app.use((req, res, next) => {
             const error = new HttpError(ResponseType.HTML, 404, new CodeError(ErrorCode.NOT_FOUND_ERROR_CODE,
                 `${req.originalUrl} not found`));

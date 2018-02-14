@@ -1,22 +1,29 @@
+import {Request} from "express";
 import NestHydrationJS from "nesthydrationjs";
 import joinMonster from "join-monster";
 import {GraphQLResolveInfo} from "graphql/type/definition";
 import {connectionFromArray} from "graphql-relay";
-import {Adapter, Args, FilterTypes, NLPSchemaTypes, Table, Value} from "../../NLPSchema";
+import IGraphQLAdapter from "../IGraphQLAdapter";
+import IGraphQLContext from "../IGraphQLContext";
+import {Args, FilterTypes, ITable, NLPSchemaTypes, Value} from "../../NLPSchema";
 import DBManager, {Options} from "./DBManager";
 
-export interface GraphQLContext {
+export type ContextCreator = (request: Request) => IFBGraphQLContext;
+
+export interface IFBGraphQLContext extends IGraphQLContext {
     query(query: string, params?: any[]): Promise<any[]>;
 
     execute(query: string, params?: any[]): Promise<any[]>;
 }
 
-export class FBAdapter implements Adapter<GraphQLContext> {
+export class GraphQLAdapter implements IGraphQLAdapter<IFBGraphQLContext> {
 
-    protected options: Options;
+    protected _options: Options;
+    protected _contextCreator: ContextCreator;
 
-    constructor(options: Options) {
-        this.options = options;
+    constructor(options: Options, contextCreator: ContextCreator) {
+        this._options = options;
+        this._contextCreator = contextCreator;
     }
 
     private static _convertType(type: number): NLPSchemaTypes {
@@ -41,7 +48,7 @@ export class FBAdapter implements Adapter<GraphQLContext> {
         }
     }
 
-    private static async _getDBTables(dbManager: DBManager): Promise<Table[]> {
+    private static async _getDBTables(dbManager: DBManager): Promise<ITable[]> {
         const result: any[] = await dbManager.query(`
           SELECT
             TRIM(r.rdb$relation_name)                                   AS "tableName",
@@ -102,7 +109,7 @@ export class FBAdapter implements Adapter<GraphQLContext> {
                 id: {column: "fieldKey", id: true},
                 name: "fieldName",
                 primary: {column: "primaryFlag", type: "BOOLEAN", default: false},
-                type: {column: "fieldType", type: FBAdapter._convertType},
+                type: {column: "fieldType", type: GraphQLAdapter._convertType},
                 nonNull: {column: "nullFlag", type: "BOOLEAN", default: false},
                 tableNameRef: "relationName",
                 fieldNameRef: "relationFieldName"
@@ -112,7 +119,7 @@ export class FBAdapter implements Adapter<GraphQLContext> {
         return NestHydrationJS().nest(result, definition);
     }
 
-    private static async _getNLPTables(dbManager: DBManager): Promise<Table[]> {
+    private static async _getNLPTables(dbManager: DBManager): Promise<ITable[]> {
         const result: any[] = await dbManager.query(`
           SELECT
             TRIM(tables.usr$relation_name)                              AS "tableName",
@@ -169,14 +176,14 @@ export class FBAdapter implements Adapter<GraphQLContext> {
         return `"${str}"`;
     }
 
-    public async getTables(): Promise<Table[]> {
+    public async getTables(): Promise<ITable[]> {
         const dbManager = new DBManager();
         try {
-            await dbManager.attach(this.options);
-            const dbTables = await FBAdapter._getDBTables(dbManager);
+            await dbManager.attach(this._options);
+            const dbTables = await GraphQLAdapter._getDBTables(dbManager);
 
             try {
-                const nlpTables = await FBAdapter._getNLPTables(dbManager);
+                const nlpTables = await GraphQLAdapter._getNLPTables(dbManager);
 
                 nlpTables.forEach((nlpTable) => {
                     const table = dbTables.find((dbTable) => dbTable.name === nlpTable.name);
@@ -204,7 +211,7 @@ export class FBAdapter implements Adapter<GraphQLContext> {
         }
     }
 
-    public async resolve(source: any, args: Args, context: GraphQLContext, info: GraphQLResolveInfo) {
+    public async resolve(source: any, args: Args, context: IFBGraphQLContext, info: GraphQLResolveInfo) {
         if (source) {
             const field = source[info.fieldName];
             if (Array.isArray(field)) {
@@ -223,7 +230,7 @@ export class FBAdapter implements Adapter<GraphQLContext> {
         };
     }
 
-    public createSQLCondition(type: FilterTypes, field: string, value: Value): string {
+    public createSQLCondition(type: FilterTypes, field: string, value: Value, context: IFBGraphQLContext): string {
         switch (type) {
             case FilterTypes.EQUALS:
                 return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} = ${DBManager.escape(value)}`;
@@ -242,5 +249,9 @@ export class FBAdapter implements Adapter<GraphQLContext> {
             default:
                 return "";
         }
+    }
+
+    async createContext(request: Request): Promise<IFBGraphQLContext> {
+        return this._contextCreator(request);
     }
 }

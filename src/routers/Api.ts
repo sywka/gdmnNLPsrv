@@ -1,11 +1,11 @@
-import express from "express";
+import {Router} from "express";
 import {CodeError, ErrorCode, HttpError, ResponseType} from "../middlewares/errorMiddleware";
 import BaseRouter from "../BaseRouter";
 import ApiV1 from "./v1/ApiV1";
 
 export default class Api extends BaseRouter {
 
-    protected routes(router: express.Router) {
+    protected routes(router: Router) {
         router.use("/v1", new ApiV1().router);
 
         router.use("/*", (req, res, next) => {

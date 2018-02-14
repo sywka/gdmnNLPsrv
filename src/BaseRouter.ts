@@ -1,17 +1,17 @@
-import express from "express";
+import {Router} from "express";
 
 export default abstract class BaseRouter {
 
     constructor() {
-        this._router = express.Router();
+        this._router = Router();
         this.routes(this._router);
     }
 
-    private _router: express.Router;
+    private _router: Router;
 
-    get router(): express.Router {
+    get router(): Router {
         return this._router;
     }
 
-    protected abstract routes(router: express.Router);
+    protected abstract routes(router: Router);
 }

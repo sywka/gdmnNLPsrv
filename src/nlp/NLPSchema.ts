@@ -14,66 +14,67 @@ import {
 import GraphQLDate from "graphql-date";
 import {GraphQLFieldConfigMap, GraphQLResolveInfo, GraphQLType} from "graphql/type/definition";
 import {connectionArgs, connectionDefinitions, GraphQLConnectionDefinitions} from "graphql-relay";
+import IGraphQLContext from "./adapter/IGraphQLContext";
 import Progress from "./adapter/fb/Progress";
 
 type ID = number | string;
 
-export interface Index {
+export interface IIndex {
     readonly key: string;
 }
 
-export interface BaseIndexing {
+export interface IBaseIndexing {
     readonly id: ID;
     readonly name: string;
-    indices?: Index[];
+    indices?: IIndex[];
 }
 
-export interface Field extends BaseIndexing {
+export interface IField extends IBaseIndexing {
     readonly primary: boolean;
     readonly type: NLPSchemaTypes;
     readonly nonNull: boolean;
     readonly tableNameRef: string;
     readonly fieldNameRef: string;
-    refs?: BaseIndexing[];
+    refs?: IBaseIndexing[];
 }
 
-export interface Table extends BaseIndexing {
-    readonly fields: Field[];
+export interface ITable extends IBaseIndexing {
+    readonly fields: IField[];
 }
 
 export type Value = string | number | boolean | Date
 
 export type Args = { [argName: string]: any }
 
-export interface Adapter<Context> {
+export interface IGraphQLSchemaAdapter<GraphQLContext> {
     quote(str: string): string;
 
-    getTables(): Promise<Table[]>;
+    getTables(): Promise<ITable[]>;
 
-    resolve(source: any, args: Args, context: Context, info: GraphQLResolveInfo): any;
+    resolve(source: any, args: Args, context: GraphQLContext, info: GraphQLResolveInfo): any;
 
-    createSQLCondition(type: FilterTypes, field: string, value: Value): string;
+    createSQLCondition(type: FilterTypes, field: string, value: Value, context: GraphQLContext): string;
 }
 
-export interface Options<Context> {
-    adapter: Adapter<Context>;
+export interface IOptions<GraphQLContext> {
+    adapter: IGraphQLSchemaAdapter<GraphQLContext>;
 }
 
-export interface NLPContext {
-    tables: Table[];
+export interface INLPContext {
+    tables: ITable[];
     types: GraphQLObjectType[];
     inputTypes: GraphQLInputObjectType[];
     connections: GraphQLConnectionDefinitions[];
     progress: {
-        tableTick: (table: Table) => void;
+        tableTick: (table: ITable) => void;
     }
 }
 
-export class NLPSchema<Context> {
+export class NLPSchema<GraphQLContext extends IGraphQLContext> {
 
-    protected _adapter: Adapter<Context>;
+    protected _adapter: IGraphQLSchemaAdapter<GraphQLContext>;
 
-    constructor(options: Options<Context>) {
+    constructor(options: IOptions<GraphQLContext>) {
         this._adapter = options.adapter;
     }
 
@@ -99,7 +100,7 @@ export class NLPSchema<Context> {
         }
     }
 
-    private static _escapeName(bases: BaseIndexing[], name: string, prefix?: string): string {
+    private static _escapeName(bases: IBaseIndexing[], name: string, prefix?: string): string {
         let replaceValue = "__";
         while (true) {
             let nameWithPrefix = prefix ? `${prefix}$${name}` : name;
@@ -112,17 +113,17 @@ export class NLPSchema<Context> {
         }
     }
 
-    private static _findPrimaryFieldName(table: Table): string {
+    private static _findPrimaryFieldName(table: ITable): string {
         const field = table.fields.find((field) => field.primary);
         if (field) return field.name;
         return "";
     }
 
-    private static _findOriginalFieldName(table: Table, fieldName): string {
+    private static _findOriginalFieldName(table: ITable, fieldName): string {
         return table.fields.find((field) => NLPSchema._escapeName(table.fields, field.name) === fieldName).name;
     }
 
-    private static _createDescription(base: BaseIndexing): string {
+    private static _createDescription(base: IBaseIndexing): string {
         const description = base.name ? base.name : "";
         if (!base.indices) return description;
 
@@ -147,13 +148,13 @@ export class NLPSchema<Context> {
     public async createSchema(hiddenProgress?: boolean): Promise<GraphQLSchema> {
         const total = 100;
         const progress = new Progress(total + 10, hiddenProgress);
-        const context: NLPContext = {
+        const context: INLPContext = {
             tables: [],
             types: [],
             inputTypes: [],
             connections: [],
             progress: {
-                tableTick: (table: Table) => {
+                tableTick: (table: ITable) => {
                     progress.tick(`Creating GraphQL type: ${table.name}`, total / context.tables.length);
                 }
             }
@@ -177,7 +178,7 @@ export class NLPSchema<Context> {
         }
     }
 
-    private _createSQLWhere(table: Table, tableAlias: string, where: any): string {
+    private _createSQLWhere(table: ITable, tableAlias: string, where: any, context: GraphQLContext): string {
         if (!where) return "";
 
         let groupsConditions = Object.keys(where).reduce((groupsConditions, filterName) => {
@@ -195,7 +196,8 @@ export class NLPSchema<Context> {
                 const condition = this._adapter.createSQLCondition(
                     filterName as FilterTypes,
                     `${tableAlias}.${this._adapter.quote(NLPSchema._findOriginalFieldName(table, fieldName))}`,
-                    value
+                    value,
+                    context
                 );
                 if (condition) conditions.push(condition);
                 return conditions;
@@ -209,21 +211,21 @@ export class NLPSchema<Context> {
         }
         if (where.not) {
             const not = where.not.reduce((conditions, item) => {
-                conditions.push(this._createSQLWhere(table, tableAlias, item));
+                conditions.push(this._createSQLWhere(table, tableAlias, item, context));
                 return conditions;
             }, []);
             if (not.length) groupsConditions.push(`NOT (${not.join(" AND ")})`);
         }
         if (where.or) {
             const or = where.or.reduce((conditions, item) => {
-                conditions.push(this._createSQLWhere(table, tableAlias, item));
+                conditions.push(this._createSQLWhere(table, tableAlias, item, context));
                 return conditions;
             }, []);
             if (or.length) groupsConditions.push(`(${or.join(" OR ")})`);
         }
         if (where.and) {
             const and = where.and.reduce((conditions, item) => {
-                conditions.push(this._createSQLWhere(table, tableAlias, item));
+                conditions.push(this._createSQLWhere(table, tableAlias, item, context));
                 return conditions;
             }, []);
             if (and.length) groupsConditions.push(`(${and.join(" AND ")})`);
@@ -231,11 +233,11 @@ export class NLPSchema<Context> {
         return groupsConditions.join(" AND ");
     }
 
-    private _createSchema(context: NLPContext): GraphQLSchema {
+    private _createSchema(context: INLPContext): GraphQLSchema {
         return new GraphQLSchema({
             query: new GraphQLObjectType({
                 name: "Tables",
-                fields: () => context.tables.reduce((fields, table, index) => {
+                fields: () => context.tables.reduce((fields, table) => {
                     fields[NLPSchema._escapeName(context.tables, table.name)] = {
                         type: this._createConnectionType(context, this._createType(context, table)),
                         description: NLPSchema._createDescription(table),
@@ -244,7 +246,9 @@ export class NLPSchema<Context> {
                             where: {type: this._createFilterInputType(context, table)},
                             order: {type: new GraphQLList(this._createSortingInputType(context, table))}
                         },
-                        where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(table, tableAlias, args.where),
+                        where: (tableAlias, args, context) => (
+                            this._createSQLWhere(table, tableAlias, args.where, context)
+                        ),
                         orderBy: (args) => NLPSchema._createObjectOrderBy(args.order),
                         resolve: this._adapter.resolve
                     };
@@ -254,7 +258,7 @@ export class NLPSchema<Context> {
         });
     }
 
-    private _createSortingInputType(context: NLPContext, table: Table) {
+    private _createSortingInputType(context: INLPContext, table: ITable) {
         const duplicate: GraphQLInputObjectType = context.inputTypes.find(type => (
             type.name === `SORTING_${NLPSchema._escapeName(context.tables, table.name)}`
         ));
@@ -282,7 +286,7 @@ export class NLPSchema<Context> {
         return inputType;
     }
 
-    private _createFilterInputType(context: NLPContext, table: Table): GraphQLInputObjectType {
+    private _createFilterInputType(context: INLPContext, table: ITable): GraphQLInputObjectType {
         const duplicate: GraphQLInputObjectType = context.inputTypes.find(type => (
             type.name === `FILTER_${NLPSchema._escapeName(context.tables, table.name)}`
         ));
@@ -388,7 +392,7 @@ export class NLPSchema<Context> {
         return inputType;
     }
 
-    private _createConnectionType(context: NLPContext, type: GraphQLObjectType): GraphQLObjectType {
+    private _createConnectionType(context: INLPContext, type: GraphQLObjectType): GraphQLObjectType {
         const name = NLPSchema._escapeName(context.tables, type.name);
         let connection = context.connections.find((connection) => (
             connection.connectionType.name === name + "Connection"
@@ -405,7 +409,7 @@ export class NLPSchema<Context> {
         return connection.connectionType;
     }
 
-    private _createType(context: NLPContext, table: Table): GraphQLObjectType {
+    private _createType(context: INLPContext, table: ITable): GraphQLObjectType {
         const duplicate: GraphQLObjectType = context.types.find(type => (
             type.name === NLPSchema._escapeName(context.tables, table.name)
         ));
@@ -428,7 +432,7 @@ export class NLPSchema<Context> {
     }
 
     //TODO optimize (cache)
-    private _createEmulatedFields(context: NLPContext, table: Table): GraphQLFieldConfigMap<void, void> {
+    private _createEmulatedFields(context: INLPContext, table: ITable): GraphQLFieldConfigMap<void, void> {
         return table.fields.reduce((fields, field) => {
             if (!field.refs) return fields;
             let tmp = field.refs.reduce((fields, ref) => {
@@ -461,11 +465,13 @@ export class NLPSchema<Context> {
                         order: {type: new GraphQLList(this._createSortingInputType(context, table))}
                     },
                     sqlColumn: NLPSchema._findPrimaryFieldName(table),
-                    sqlJoin: (parentTable, joinTable, args) => (
+                    sqlJoin: (parentTable, joinTable) => (
                         `${parentTable}.${this._adapter.quote(NLPSchema._findPrimaryFieldName(table))}` +
                         ` = ${joinTable}.${this._adapter.quote(NLPSchema._findPrimaryFieldName(table))}`
                     ),
-                    where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(table, tableAlias, args.where),
+                    where: (tableAlias, args, context) => (
+                        this._createSQLWhere(table, tableAlias, args.where, context)
+                    ),
                     orderBy: (args) => NLPSchema._createObjectOrderBy(args.order)
                 };
                 return fields;
@@ -475,15 +481,16 @@ export class NLPSchema<Context> {
         }, {});
     }
 
-    private _createFields(context: NLPContext, table: Table, fields: Field[]): GraphQLFieldConfigMap<void, void> {
+    private _createFields(context: INLPContext, table: ITable, fields: IField[]): GraphQLFieldConfigMap<void, void> {
         return fields.reduce((resultFields, field) => {
             let fieldName: string;
             let fieldType: GraphQLType;
             let fieldDescription: string;
             let sqlJoin: (parentTable: string, joinTable: string, args: any) => string;
             let args: any;
-            let tableRef: Table;
-            if (field.tableNameRef && (tableRef = context.tables.find((table) => (
+            let tableRef: ITable;
+            if (field.tableNameRef &&
+                (tableRef = context.tables.find((table) => (
                     table.name === NLPSchema._escapeName(context.tables, field.tableNameRef)
                 )))
             ) {
@@ -494,8 +501,9 @@ export class NLPSchema<Context> {
                     name: field.name,
                     indices: field.refs && field.refs.length ? field.refs[0].indices : null
                 });
-                sqlJoin = (parentTable, joinTable, args) => (
-                    `${parentTable}.${this._adapter.quote(field.name)} = ${joinTable}.${this._adapter.quote(field.fieldNameRef)}`
+                sqlJoin = (parentTable, joinTable) => (
+                    `${parentTable}.${this._adapter.quote(field.name)}` +
+                    ` = ${joinTable}.${this._adapter.quote(field.fieldNameRef)}`
                 );
                 args = {
                     ...connectionArgs,
@@ -515,7 +523,9 @@ export class NLPSchema<Context> {
                 resolve: this._adapter.resolve,
                 sqlColumn: field.name,
                 sqlJoin,
-                where: (tableAlias, args, context, sqlASTNode) => this._createSQLWhere(table, tableAlias, args.where),
+                where: (tableAlias, args, context) => (
+                    this._createSQLWhere(table, tableAlias, args.where, context)
+                ),
                 orderBy: (args) => NLPSchema._createObjectOrderBy(args.order)
             };
             return resultFields;
