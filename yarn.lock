@@ -133,9 +133,9 @@
   dependencies:
     "@types/graphql" "*"
 
-"@types/graphql-relay@^0.4.3":
-  version "0.4.3"
-  resolved "https://registry.yarnpkg.com/@types/graphql-relay/-/graphql-relay-0.4.3.tgz#44921f90afeb79f906424306c1730417d8053aa0"
+"@types/graphql-relay@^0.4.4":
+  version "0.4.4"
+  resolved "https://registry.yarnpkg.com/@types/graphql-relay/-/graphql-relay-0.4.4.tgz#a835d9e51d062ce6980152d6e4288241eaaef156"
   dependencies:
     "@types/graphql" "*"
 
@@ -143,17 +143,17 @@
   version "0.12.1"
   resolved "https://registry.yarnpkg.com/@types/graphql/-/graphql-0.12.1.tgz#2c2f9a0da3cd23ee1ce7a6e6c9135ceeb9131c05"
 
-"@types/graphql@^0.12.3":
-  version "0.12.3"
-  resolved "https://registry.yarnpkg.com/@types/graphql/-/graphql-0.12.3.tgz#c429585aaa4523135e0ab4e12dec72d2d913946f"
+"@types/graphql@^0.12.4":
+  version "0.12.4"
+  resolved "https://registry.yarnpkg.com/@types/graphql/-/graphql-0.12.4.tgz#d43bb55d45c6de0178bbd11dd59d04fd42138d94"
 
-"@types/hapi@^17.0.0":
-  version "17.0.0"
-  resolved "https://registry.yarnpkg.com/@types/hapi/-/hapi-17.0.0.tgz#2fd9ec4e32b82ce894c5d08d744f2e3f3c7a52a0"
+"@types/hapi@^16.1.10":
+  version "16.1.13"
+  resolved "https://registry.yarnpkg.com/@types/hapi/-/hapi-16.1.13.tgz#f0460fdf24d5be096c4b52a6d12b245e42620e05"
   dependencies:
     "@types/boom" "^4"
     "@types/catbox" "*"
-    "@types/iron" "*"
+    "@types/events" "*"
     "@types/joi" "*"
     "@types/mimos" "*"
     "@types/node" "*"
@@ -163,12 +163,6 @@
 "@types/http-assert@*":
   version "1.2.2"
   resolved "https://registry.yarnpkg.com/@types/http-assert/-/http-assert-1.2.2.tgz#17dfe5a82184a8898935d96fe2eaedd37d22d9a4"
-
-"@types/iron@*":
-  version "5.0.1"
-  resolved "https://registry.yarnpkg.com/@types/iron/-/iron-5.0.1.tgz#5420bbda8623c48ee51b9a78ebad05d7305b4b24"
-  dependencies:
-    "@types/node" "*"
 
 "@types/joi@*":
   version "13.0.5"
