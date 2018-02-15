@@ -42,7 +42,7 @@ export interface ITable extends IBaseIndexing {
     readonly fields: IField[];
 }
 
-export type Value = string | number | boolean | Date
+export type Value = string | number | boolean | Date | DateConstructor
 
 export type Args = { [argName: string]: any }
 

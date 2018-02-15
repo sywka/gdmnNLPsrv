@@ -2,12 +2,12 @@ import {Router} from "express";
 
 export default abstract class BaseRouter {
 
-    constructor() {
+    protected constructor() {
         this._router = Router();
         this.routes(this._router);
     }
 
-    private _router: Router;
+    private readonly _router: Router;
 
     get router(): Router {
         return this._router;

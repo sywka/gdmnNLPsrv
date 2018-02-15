@@ -223,7 +223,10 @@ export class GraphQLAdapter implements IGraphQLAdapter<IFBGraphQLContext> {
             return field;
         }
 
-        const result = await joinMonster(info, {}, (sql: string) => context.query(sql));
+        const result = await joinMonster(info, {}, (sql: string) => {
+            console.log(sql);
+            return context.query(sql);
+        });
         return {
             total: result.length,
             ...connectionFromArray(result, args)

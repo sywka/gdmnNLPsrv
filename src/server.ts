@@ -2,7 +2,7 @@ import bodyParser from "body-parser";
 import config from "config";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import express, {Router, Application} from "express";
+import express, {Application, Router} from "express";
 import serveStatic from "serve-static";
 import morgan from "morgan";
 import {CodeError, ErrorCode, getErrorMiddleware, HttpError, ResponseType} from "./middlewares/errorMiddleware";
@@ -10,6 +10,8 @@ import Api from "./routers/Api";
 import BaseRouter from "./BaseRouter";
 
 export default class Server extends BaseRouter {
+
+    private readonly _app: Application;
 
     constructor() {
         super();
@@ -19,8 +21,6 @@ export default class Server extends BaseRouter {
         this._app.use(this.router);
         this.errorHandler(this._app);
     }
-
-    private _app: Application;
 
     get app(): Application {
         return this._app;

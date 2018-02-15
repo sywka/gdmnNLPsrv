@@ -11,9 +11,9 @@ export interface NLPOptions<GraphQLContext extends IGraphQLContext> {
 
 export default class NLPExpress<GraphQLContext extends IGraphQLContext> {
 
-    private _nlpSchema: NLPSchema<GraphQLContext>;
-    private _adapter: IGraphQLAdapter<GraphQLContext>;
-    private _graphiql: boolean;
+    private readonly _nlpSchema: NLPSchema<GraphQLContext>;
+    private readonly _adapter: IGraphQLAdapter<GraphQLContext>;
+    private readonly _graphiql: boolean;
 
     constructor(options: NLPOptions<GraphQLContext>) {
         this._adapter = options.adapter;
@@ -26,17 +26,17 @@ export default class NLPExpress<GraphQLContext extends IGraphQLContext> {
 
     get middleware(): Handler {
         return graphqlHTTP(async (req: Request) => {
+            if (!this._nlpSchema.schema) throw new Error("Temporarily unavailable");
+
             const startTime = Date.now();
 
             const context = await this._adapter.createContext(req);
             await context.attach();
-
-            if (!this._nlpSchema.schema) throw new Error("Temporarily unavailable");
             return {
                 schema: this._nlpSchema.schema,
                 graphiql: this._graphiql,
                 context: context,
-                async extensions({document, variables, operationName, result}) {
+                async extensions() {
                     await context.detach();
                     return {runTime: (Date.now() - startTime) + " мсек"};
                 }

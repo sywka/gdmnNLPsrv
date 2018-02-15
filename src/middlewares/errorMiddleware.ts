@@ -1,4 +1,4 @@
-import {NextFunction, Request, Response} from "express";
+import {Request, Response} from "express";
 import http from "http";
 
 export enum ResponseType {
@@ -15,7 +15,7 @@ export enum ErrorCode {
 }
 
 export function getErrorMiddleware() {
-    return (err: any, req: Request, res: Response, next: NextFunction) => {
+    return (err: any, req: Request, res: Response) => {
         if (!(err instanceof HttpError)) {
             err = new HttpError(ResponseType.HTML, 500, err);
         }

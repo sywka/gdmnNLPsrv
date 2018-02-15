@@ -4,11 +4,11 @@ import {IFBGraphQLContext} from "./GraphQLAdapter";
 
 export default class GraphQLContext implements IFBGraphQLContext {
 
-    private _database: DBManager = new DBManager();
-    private _queue: Queue = new Queue(1);
+    private readonly _database: DBManager = new DBManager();
+    private readonly _queue: Queue = new Queue(1);
 
-    private _options: Options;
-    private _maxPool: number;
+    private readonly _options: Options;
+    private readonly _maxPool: number;
 
     constructor(options: Options, maxPool: number) {
         this._options = options;

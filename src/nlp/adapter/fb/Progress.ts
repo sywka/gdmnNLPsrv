@@ -3,7 +3,7 @@ import Timer = NodeJS.Timer;
 
 export default class Progress {
 
-    private _progressBar: ProgressBar;
+    private readonly _progressBar: ProgressBar;
     private _reRenderInterval: Timer;
 
     constructor(total: number = 10, hidden?: boolean) {

@@ -7,7 +7,7 @@ abstract class Base<DB extends (firebird.Database | firebird.Transaction)> {
 
     protected _db: DB;
 
-    constructor(db: DB) {
+    protected constructor(db: DB) {
         this._db = db;
     }
 
@@ -47,7 +47,7 @@ abstract class Base<DB extends (firebird.Database | firebird.Transaction)> {
     }
 }
 
-class Transaction extends Base<firebird.Transaction> {
+export class Transaction extends Base<firebird.Transaction> {
 
     public isInTransaction(): boolean {
         return Boolean(this._db);
@@ -158,7 +158,7 @@ export default class DBManager extends Database {
 
     public static async createConnectionPool(options: Options, max: number): Promise<void> {
         if (DBManager._connectionPool) throw new Error("Connection pool already created");
-        return new Promise<void>((resolve, reject) => {
+        return new Promise<void>((resolve) => {
             DBManager._connectionPool = firebird.pool(max, Database.bindOptions(options), null);
             resolve();
         });
@@ -166,7 +166,7 @@ export default class DBManager extends Database {
 
     public static async destroyConnectionPool(): Promise<void> {
         if (!DBManager._connectionPool) throw new Error("Connection pool need created");
-        return new Promise<void>((resolve, reject) => {
+        return new Promise<void>((resolve) => {
             DBManager._connectionPool.destroy();
             DBManager._connectionPool = null;
             resolve();
@@ -176,14 +176,12 @@ export default class DBManager extends Database {
     public async attachFromPool(): Promise<void> {
         if (!DBManager._connectionPool) throw new Error("Connection pool need created");
         if (this._db) throw new Error("Database already created");
-        if (DBManager._connectionPool) {
-            return new Promise<void>((resolve, reject) => {
-                DBManager._connectionPool.get((err, db) => {
-                    if (err) return reject(err);
-                    this._db = db;
-                    resolve();
-                });
+        return new Promise<void>((resolve, reject) => {
+            DBManager._connectionPool.get((err, db) => {
+                if (err) return reject(err);
+                this._db = db;
+                resolve();
             });
-        }
+        });
     }
 }
