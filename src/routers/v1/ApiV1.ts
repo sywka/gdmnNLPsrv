@@ -1,13 +1,10 @@
 import {NextFunction, Request, Response, Router} from "express";
 import config from "config";
 import {express} from "graphql-voyager/middleware";
-import BaseRouter from "../../BaseRouter";
-import NLPExpress from "../../nlp/NLPExpress";
-import {GraphQLAdapter} from "../../nlp/adapter/fb/GraphQLAdapter";
-import GraphQLContext from "../../nlp/adapter/fb/GraphQLContext";
-import {Options} from "../../nlp/adapter/fb/DBManager";
+import BaseRouter from "../../nlp/BaseRouter";
+import NLP_FB_Express from "../../nlp/NLP_FB_Express";
 
-export default class ApiV1 extends BaseRouter {
+export default class ApiV1 extends BaseRouter<void> {
 
     static readonly VIEWER_PATH = "/schema/viewer";
 
@@ -19,16 +16,15 @@ export default class ApiV1 extends BaseRouter {
             })(req, res, next);
         });
 
-        const options: Options = {
+        router.use("/", new NLP_FB_Express({
             host: config.get("db.host"),
             port: config.get("db.port"),
             user: config.get("db.user"),
             password: config.get("db.password"),
-            database: config.get("db.path")
-        };
-        router.use("/", new NLPExpress({
-            adapter: new GraphQLAdapter(options, () => new GraphQLContext(options, 1000)),
-            graphiql: true
-        }).middleware);
+            database: config.get("db.path"),
+
+            graphiql: true,
+            maxPool: 100
+        }).router);
     }
 }

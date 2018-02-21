@@ -12,9 +12,9 @@ import {
     GraphQLString
 } from "graphql";
 import GraphQLDate from "graphql-date";
+import {GraphQLUrl} from "graphql-url";
 import {GraphQLFieldConfigMap, GraphQLResolveInfo, GraphQLType} from "graphql/type/definition";
 import {connectionArgs, connectionDefinitions, GraphQLConnectionDefinitions} from "graphql-relay";
-import IGraphQLContext from "./adapter/IGraphQLContext";
 import Progress from "./adapter/fb/Progress";
 
 type ID = number | string;
@@ -56,7 +56,7 @@ export interface IGraphQLSchemaAdapter<GraphQLContext> {
     createSQLCondition(type: FilterTypes, field: string, value: Value, context: GraphQLContext): string;
 }
 
-export interface IOptions<GraphQLContext> {
+export interface ISchemaOptions<GraphQLContext> {
     adapter: IGraphQLSchemaAdapter<GraphQLContext>;
 }
 
@@ -70,12 +70,16 @@ export interface INLPContext {
     }
 }
 
-export class NLPSchema<GraphQLContext extends IGraphQLContext> {
+export class NLPSchema<GraphQLContext> {
 
-    protected _adapter: IGraphQLSchemaAdapter<GraphQLContext>;
+    constructor(options: ISchemaOptions<GraphQLContext>) {
+        this._options = options;
+    }
 
-    constructor(options: IOptions<GraphQLContext>) {
-        this._adapter = options.adapter;
+    protected _options: ISchemaOptions<GraphQLContext>;
+
+    get options(): ISchemaOptions<GraphQLContext> {
+        return this._options;
     }
 
     protected _schema: GraphQLSchema;
@@ -84,8 +88,10 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
         return this._schema;
     }
 
-    private static _convertToGraphQLType(type: NLPSchemaTypes): GraphQLScalarType {
-        switch (type) {
+    private static _convertPrimitiveFieldType(field: IField): GraphQLScalarType {
+        switch (field.type) {
+            case NLPSchemaTypes.BLOB:
+                return GraphQLUrl;
             case NLPSchemaTypes.INT:
                 return GraphQLInt;
             case NLPSchemaTypes.FLOAT:
@@ -100,11 +106,10 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
         }
     }
 
-    private static _escapeName(bases: IBaseIndexing[], name: string, prefix?: string): string {
+    private static _escapeName(bases: IBaseIndexing[], name: string): string {
         let replaceValue = "__";
         while (true) {
-            let nameWithPrefix = prefix ? `${prefix}$${name}` : name;
-            const escapedName = nameWithPrefix.replace(/\$/g, replaceValue);
+            const escapedName = name.replace(/\$/g, replaceValue);
             if (escapedName === name) return escapedName;
             if (!bases.find((base) => base.name === escapedName)) {
                 return escapedName;
@@ -163,7 +168,7 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
             console.log("Creating NLP GraphQL schema...");
 
             progress.tick("Reading database schema...");
-            context.tables = await this._adapter.getTables();
+            context.tables = await this._options.adapter.getTables();
 
             progress.tick("Creating GraphQL schema...", 8);
             this._schema = this._createSchema(context);
@@ -193,9 +198,9 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
             const filter: any = where[filterName];
             let conditions = Object.keys(filter).reduce((conditions, fieldName) => {
                 const value: any = filter[fieldName];
-                const condition = this._adapter.createSQLCondition(
+                const condition = this._options.adapter.createSQLCondition(
                     filterName as FilterTypes,
-                    `${tableAlias}.${this._adapter.quote(NLPSchema._findOriginalFieldName(table, fieldName))}`,
+                    `${tableAlias}.${this._options.adapter.quote(NLPSchema._findOriginalFieldName(table, fieldName))}`,
                     value,
                     context
                 );
@@ -207,7 +212,7 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
         }, []);
 
         if (where.isNull) {
-            groupsConditions.push(`${tableAlias}.${this._adapter.quote(where.isNull)} IS NULL`);
+            groupsConditions.push(`${tableAlias}.${this._options.adapter.quote(where.isNull)} IS NULL`);
         }
         if (where.not) {
             const not = where.not.reduce((conditions, item) => {
@@ -250,7 +255,7 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
                             this._createSQLWhere(table, tableAlias, args.where, context)
                         ),
                         orderBy: (args) => NLPSchema._createObjectOrderBy(args.order),
-                        resolve: this._adapter.resolve
+                        resolve: this._options.adapter.resolve.bind(this._options.adapter)
                     };
                     return fields;
                 }, {})
@@ -295,10 +300,15 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
         const equalsType = new GraphQLInputObjectType({
             name: `EQUALS_${NLPSchema._escapeName(context.tables, table.name)}`,
             fields: table.fields.reduce((fields, field) => {
-                fields[NLPSchema._escapeName(table.fields, field.name)] = {
-                    type: NLPSchema._convertToGraphQLType(field.type),
-                    description: NLPSchema._createDescription(field)
-                };
+                switch (field.type) {
+                    case NLPSchemaTypes.BLOB:
+                        break;
+                    default:
+                        fields[NLPSchema._escapeName(table.fields, field.name)] = {
+                            type: NLPSchema._convertPrimitiveFieldType(field),
+                            description: NLPSchema._createDescription(field)
+                        };
+                }
                 return fields;
             }, {})
         });
@@ -309,7 +319,7 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
                 switch (field.type) {
                     case NLPSchemaTypes.STRING:
                         fields[NLPSchema._escapeName(table.fields, field.name)] = {
-                            type: NLPSchema._convertToGraphQLType(field.type),
+                            type: NLPSchema._convertPrimitiveFieldType(field),
                             description: NLPSchema._createDescription(field)
                         };
                         break;
@@ -337,7 +347,7 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
                 switch (field.type) {
                     case NLPSchemaTypes.STRING:
                         fields[NLPSchema._escapeName(table.fields, field.name)] = {
-                            type: NLPSchema._convertToGraphQLType(field.type),
+                            type: NLPSchema._convertPrimitiveFieldType(field),
                             description: NLPSchema._createDescription(field)
                         };
                         break;
@@ -354,7 +364,7 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
                     case NLPSchemaTypes.INT:
                     case NLPSchemaTypes.FLOAT:
                         fields[NLPSchema._escapeName(table.fields, field.name)] = {
-                            type: NLPSchema._convertToGraphQLType(field.type),
+                            type: NLPSchema._convertPrimitiveFieldType(field),
                             description: NLPSchema._createDescription(field)
                         };
                         break;
@@ -416,7 +426,8 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
         if (duplicate) return duplicate;
 
         context.progress.tableTick(table);
-        const type: GraphQLObjectType = new GraphQLObjectType({     //TODO not create if fields empty
+        //TODO not create if fields empty
+        const type: GraphQLObjectType = new GraphQLObjectType({
             name: NLPSchema._escapeName(context.tables, table.name),
             sqlTable: table.name,
             uniqueKey: NLPSchema._findPrimaryFieldName(table),
@@ -437,7 +448,7 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
             if (!field.refs) return fields;
             let tmp = field.refs.reduce((fields, ref) => {
                 const emulatedType = new GraphQLObjectType({
-                    name: NLPSchema._escapeName(context.tables, `${table.name}_${ref.id}`, "EMULATED"),
+                    name: NLPSchema._escapeName(context.tables, `EMULATED_${table.name}_${ref.id}`),
                     sqlTable: table.name,
                     uniqueKey: NLPSchema._findPrimaryFieldName(table),
                     description: ref.name,
@@ -453,7 +464,7 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
                 });
                 if (!Object.keys(emulatedType.getFields()).length) return fields;
 
-                fields[NLPSchema._escapeName(table.fields, ref.id as string, "link")] = {
+                fields[NLPSchema._escapeName(table.fields, `link_${ref.id as string}`)] = {
                     type: new GraphQLNonNull(emulatedType),
                     description: NLPSchema._createDescription({
                         id: ref.id,
@@ -466,8 +477,8 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
                     },
                     sqlColumn: NLPSchema._findPrimaryFieldName(table),
                     sqlJoin: (parentTable, joinTable) => (
-                        `${parentTable}.${this._adapter.quote(NLPSchema._findPrimaryFieldName(table))}` +
-                        ` = ${joinTable}.${this._adapter.quote(NLPSchema._findPrimaryFieldName(table))}`
+                        `${parentTable}.${this._options.adapter.quote(NLPSchema._findPrimaryFieldName(table))}` +
+                        ` = ${joinTable}.${this._options.adapter.quote(NLPSchema._findPrimaryFieldName(table))}`
                     ),
                     where: (tableAlias, args, context) => (
                         this._createSQLWhere(table, tableAlias, args.where, context)
@@ -494,7 +505,7 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
                     table.name === NLPSchema._escapeName(context.tables, field.tableNameRef)
                 )))
             ) {
-                fieldName = NLPSchema._escapeName(fields, field.name, "link");
+                fieldName = NLPSchema._escapeName(fields, `link_${field.name}`);
                 fieldType = this._createConnectionType(context, this._createType(context, tableRef));
                 fieldDescription = NLPSchema._createDescription({
                     id: field.id,
@@ -502,8 +513,8 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
                     indices: field.refs && field.refs.length ? field.refs[0].indices : null
                 });
                 sqlJoin = (parentTable, joinTable) => (
-                    `${parentTable}.${this._adapter.quote(field.name)}` +
-                    ` = ${joinTable}.${this._adapter.quote(field.fieldNameRef)}`
+                    `${parentTable}.${this._options.adapter.quote(field.name)}` +
+                    ` = ${joinTable}.${this._options.adapter.quote(field.fieldNameRef)}`
                 );
                 args = {
                     ...connectionArgs,
@@ -512,7 +523,7 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
                 };
             } else {
                 fieldName = NLPSchema._escapeName(fields, field.name);
-                fieldType = NLPSchema._convertToGraphQLType(field.type);
+                fieldType = NLPSchema._convertPrimitiveFieldType(field);
                 fieldDescription = NLPSchema._createDescription(field);
             }
 
@@ -520,7 +531,7 @@ export class NLPSchema<GraphQLContext extends IGraphQLContext> {
                 type: field.nonNull ? new GraphQLNonNull(fieldType) : fieldType,
                 description: fieldDescription,
                 args,
-                resolve: this._adapter.resolve,
+                resolve: this._options.adapter.resolve.bind(this._options.adapter),
                 sqlColumn: field.name,
                 sqlJoin,
                 where: (tableAlias, args, context) => (

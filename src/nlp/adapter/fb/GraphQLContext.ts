@@ -1,23 +1,27 @@
 import Queue from "promise-queue";
-import DBManager, {Options} from "./DBManager";
+import DBManager, {DBOptions} from "./DBManager";
 import {IFBGraphQLContext} from "./GraphQLAdapter";
 
+export interface IContextOptions extends DBOptions {
+    maxPool: number;
+}
+
 export default class GraphQLContext implements IFBGraphQLContext {
+
+    public static DEFAULT_MAX_POOL = 10;
 
     private readonly _database: DBManager = new DBManager();
     private readonly _queue: Queue = new Queue(1);
 
-    private readonly _options: Options;
-    private readonly _maxPool: number;
+    private readonly _options: IContextOptions;
 
-    constructor(options: Options, maxPool: number) {
+    constructor(options: IContextOptions) {
         this._options = options;
-        this._maxPool = maxPool;
     }
 
     public async attach(): Promise<GraphQLContext> {
         if (!DBManager.isConnectionPoolCreated()) {
-            await DBManager.createConnectionPool(this._options, this._maxPool);
+            await DBManager.createConnectionPool(this._options, this._options.maxPool);
         }
         await this._queue.add(() => this._database.attachFromPool());
         return this;

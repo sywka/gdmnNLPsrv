@@ -1,7 +1,9 @@
 import path from "path";
 import firebird from "node-firebird";
 
-export type Options = firebird.Options;
+type BlobField = (callback: (err, name, event) => void) => void;
+
+export type DBOptions = firebird.Options;
 
 abstract class Base<DB extends (firebird.Database | firebird.Transaction)> {
 
@@ -11,19 +13,27 @@ abstract class Base<DB extends (firebird.Database | firebird.Transaction)> {
         this._db = db;
     }
 
-    public static async readBlob(blobFieldResult: (callback: (err, name, event) => void) => void): Promise<string> {
-        return new Promise<string>((resolve, reject) => {
+    public static async readBlob(blobFieldResult: BlobField): Promise<Buffer>;
+    public static async readBlob(blobFieldResult: BlobField, stream: NodeJS.WritableStream): Promise<void>;
+    public static async readBlob(blobFieldResult: BlobField, stream?: NodeJS.WritableStream): Promise<any> {
+        return new Promise<any>((resolve, reject) => {
             blobFieldResult((err, name, event) => {
                 if (err) return reject(err);
 
-                let chunks = [], length = 0;
-                event.on("data", (chunk) => {
-                    chunks.push(chunk);
-                    length += chunk.length;
-                });
-                event.on("end", () => {
-                    resolve(Buffer.concat(chunks, length).toString());
-                });
+                if (stream) {
+                    event.pipe(stream);
+                    return stream.on("finish", () => resolve());
+
+                } else {
+                    let chunks = [], length = 0;
+                    event.on("data", (chunk: Buffer) => {
+                        chunks.push(chunk);
+                        length += chunk.length;
+                    });
+                    event.on("end", () => {
+                        return resolve(Buffer.concat(chunks, length));
+                    });
+                }
             });
         });
     }
@@ -85,7 +95,7 @@ export class Database extends Base<firebird.Database> {
         return firebird.escape(value);
     }
 
-    protected static bindOptions(options: Options): Options {
+    protected static bindOptions(options: DBOptions): DBOptions {
         return {
             ...options,
             database: path.resolve(process.cwd(), options.database)
@@ -96,7 +106,7 @@ export class Database extends Base<firebird.Database> {
         return Boolean(this._db);
     }
 
-    public async attachOrCreate(options: Options): Promise<void> {
+    public async attachOrCreate(options: DBOptions): Promise<void> {
         if (this._db) throw new Error("Database already created");
         return new Promise<void>((resolve, reject) => {
             firebird.attachOrCreate(Database.bindOptions(options), (err, db) => {
@@ -107,7 +117,7 @@ export class Database extends Base<firebird.Database> {
         });
     }
 
-    public async attach(options: Options): Promise<void> {
+    public async attach(options: DBOptions): Promise<void> {
         if (this._db) throw new Error("Database already created");
         return new Promise<void>((resolve, reject) => {
             firebird.attach(Database.bindOptions(options), (err, db) => {
@@ -150,13 +160,15 @@ export class Database extends Base<firebird.Database> {
 
 export default class DBManager extends Database {
 
+    public static DEFAULT_MAX_POOL = 10;
+
     protected static _connectionPool: firebird.ConnectionPool;
 
     public static isConnectionPoolCreated(): boolean {
         return Boolean(this._connectionPool);
     }
 
-    public static async createConnectionPool(options: Options, max: number): Promise<void> {
+    public static async createConnectionPool(options: DBOptions, max: number = DBManager.DEFAULT_MAX_POOL): Promise<void> {
         if (DBManager._connectionPool) throw new Error("Connection pool already created");
         return new Promise<void>((resolve) => {
             DBManager._connectionPool = firebird.pool(max, Database.bindOptions(options), null);

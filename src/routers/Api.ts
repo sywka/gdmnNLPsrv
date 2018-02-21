@@ -1,9 +1,9 @@
 import {Router} from "express";
 import {CodeError, ErrorCode, HttpError, ResponseType} from "../middlewares/errorMiddleware";
-import BaseRouter from "../BaseRouter";
+import BaseRouter from "../nlp/BaseRouter";
 import ApiV1 from "./v1/ApiV1";
 
-export default class Api extends BaseRouter {
+export default class Api extends BaseRouter<void> {
 
     protected routes(router: Router) {
         router.use("/v1", new ApiV1().router);

@@ -7,9 +7,9 @@ import serveStatic from "serve-static";
 import morgan from "morgan";
 import {CodeError, ErrorCode, getErrorMiddleware, HttpError, ResponseType} from "./middlewares/errorMiddleware";
 import Api from "./routers/Api";
-import BaseRouter from "./BaseRouter";
+import BaseRouter from "./nlp/BaseRouter";
 
-export default class Server extends BaseRouter {
+export default class Server extends BaseRouter<void> {
 
     private readonly _app: Application;
 

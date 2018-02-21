@@ -1,33 +1,42 @@
-import {Request} from "express";
 import NestHydrationJS from "nesthydrationjs";
 import joinMonster from "join-monster";
 import {GraphQLResolveInfo} from "graphql/type/definition";
 import {connectionFromArray} from "graphql-relay";
-import IGraphQLAdapter from "../IGraphQLAdapter";
-import IGraphQLContext from "../IGraphQLContext";
-import {Args, FilterTypes, ITable, NLPSchemaTypes, Value} from "../../NLPSchema";
-import DBManager, {Options} from "./DBManager";
+import {GraphQLUrl} from "graphql-url";
+import {Args, FilterTypes, IGraphQLSchemaAdapter, ITable, NLPSchemaTypes, Value} from "../../NLPSchema";
+import DBManager, {DBOptions} from "./DBManager";
 
-export type ContextCreator = (request: Request) => IFBGraphQLContext;
+export type BlobLinkCreator = (id: IBlobID) => string;
 
-export interface IFBGraphQLContext extends IGraphQLContext {
+export interface IFBGraphQLContext {
     query(query: string, params?: any[]): Promise<any[]>;
 
     execute(query: string, params?: any[]): Promise<any[]>;
 }
 
-export class GraphQLAdapter implements IGraphQLAdapter<IFBGraphQLContext> {
+export interface IAdapterOptions extends DBOptions {
+    blobLinkCreator: BlobLinkCreator;
+}
 
-    protected _options: Options;
-    protected _contextCreator: ContextCreator;
+export interface IBlobID {
+    table: string;
+    field: string;
+    primaryField: string;
+    primaryKey: string;
+}
 
-    constructor(options: Options, contextCreator: ContextCreator) {
+export class GraphQLAdapter implements IGraphQLSchemaAdapter<IFBGraphQLContext> {
+
+    protected _options: IAdapterOptions;
+
+    constructor(options: IAdapterOptions) {
         this._options = options;
-        this._contextCreator = contextCreator;
     }
 
     private static _convertType(type: number): NLPSchemaTypes {
         switch (type) {
+            case 261:
+                return NLPSchemaTypes.BLOB;
             case 7:
             case 8:
             case 16:
@@ -91,7 +100,6 @@ export class GraphQLAdapter implements IGraphQLAdapter<IFBGraphQLContext> {
                          
           WHERE r.rdb$view_blr IS NULL
             AND (r.rdb$system_flag IS NULL OR r.rdb$system_flag = 0)
-            AND f.rdb$field_type != 45 AND f.rdb$field_type != 261
               
             AND (
               r.rdb$relation_name = 'GD_PEOPLE'
@@ -198,10 +206,11 @@ export class GraphQLAdapter implements IGraphQLAdapter<IFBGraphQLContext> {
                         });
                     }
                 });
-                return dbTables;
             } catch (error) {
                 console.error(`An error occurred while reading the nlp schema: ${error.message}`);
             }
+
+            return dbTables;
         } finally {
             try {
                 await dbManager.detach();
@@ -213,7 +222,22 @@ export class GraphQLAdapter implements IGraphQLAdapter<IFBGraphQLContext> {
 
     public async resolve(source: any, args: Args, context: IFBGraphQLContext, info: GraphQLResolveInfo) {
         if (source) {
+            //resolve fields
             const field = source[info.fieldName];
+
+            //resolve BLOB fields
+            if (info.returnType === GraphQLUrl && typeof(field) === "function") {
+                const {sqlTable, uniqueKey} = (info.parentType as any)._typeConfig;
+                const id: IBlobID = {
+                    table: sqlTable,
+                    field: info.fieldName,
+                    primaryField: uniqueKey,
+                    primaryKey: source[uniqueKey]
+                };
+                return this._options.blobLinkCreator(id);
+            }
+
+            // resolve connections
             if (Array.isArray(field)) {
                 return {
                     total: field.length,
@@ -223,6 +247,7 @@ export class GraphQLAdapter implements IGraphQLAdapter<IFBGraphQLContext> {
             return field;
         }
 
+        // resolve root query
         const result = await joinMonster(info, {}, (sql: string) => {
             console.log(sql);
             return context.query(sql);
@@ -252,9 +277,5 @@ export class GraphQLAdapter implements IGraphQLAdapter<IFBGraphQLContext> {
             default:
                 return "";
         }
-    }
-
-    async createContext(request: Request): Promise<IFBGraphQLContext> {
-        return this._contextCreator(request);
     }
 }
