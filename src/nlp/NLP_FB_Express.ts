@@ -1,31 +1,37 @@
 import {NextFunction, Request, Response, Router} from "express";
 import graphqlHTTP from "express-graphql";
+import Database, {DBConnectionPool, DBOptions} from "./adapter/fb/Database";
+import GraphQLContext from "./adapter/fb/GraphQLContext";
+import {GraphQLAdapter, IBlobID} from "./adapter/fb/GraphQLAdapter";
 import {NLPSchema} from "./NLPSchema";
 import BaseRouter from "./BaseRouter";
-import GraphQLContext, {IContextOptions} from "./adapter/fb/GraphQLContext";
-import {GraphQLAdapter, IBlobID} from "./adapter/fb/GraphQLAdapter";
-import DBManager, {DBOptions} from "./adapter/fb/DBManager";
 
-export interface NLPExpressOptions extends IContextOptions {
+export interface NLPExpressOptions extends DBOptions {
     graphiql?: boolean;
+    maxConnectionPool?: number;
 }
 
 export default class NLP_FB_Express extends BaseRouter<NLPExpressOptions> {
 
     public static BLOBS_PATH = "/blobs";
 
-    protected curRouteUrl: string = "";
+    protected _routerUrl: string = "";
+    protected _dbConnectionPool: DBConnectionPool;
     protected _nlpSchema: NLPSchema<GraphQLContext>;
 
     constructor(options: NLPExpressOptions) {
         super(options);
 
+        this._dbConnectionPool = new DBConnectionPool();
+        this._dbConnectionPool.createConnectionPool(options, options.maxConnectionPool);
+
         this._nlpSchema = new NLPSchema({
             adapter: new GraphQLAdapter({
                 ...(options as DBOptions),
-                blobLinkCreator: (id: IBlobID) => (
-                    `${this.curRouteUrl}${NLP_FB_Express.BLOBS_PATH}?id=${new Buffer(`${JSON.stringify(id)}`).toString("base64")}`
-                )
+                blobLinkCreator: (id: IBlobID) => {
+                    const idParam = new Buffer(`${JSON.stringify(id)}`).toString("base64");
+                    return `${this._routerUrl}${NLP_FB_Express.BLOBS_PATH}?id=${idParam}`;
+                }
             })
         });
         this._nlpSchema.createSchema().catch(console.error);
@@ -33,7 +39,7 @@ export default class NLP_FB_Express extends BaseRouter<NLPExpressOptions> {
 
     protected routes(router: Router, options: NLPExpressOptions) {
         router.use("/", (req: Request, res: Response, next: NextFunction) => {
-            this.curRouteUrl = req.protocol + "://" + req.get("host") + req.baseUrl;
+            this._routerUrl = req.protocol + "://" + req.get("host") + req.baseUrl;
             next();
         });
 
@@ -42,23 +48,23 @@ export default class NLP_FB_Express extends BaseRouter<NLPExpressOptions> {
             next();
         });
         router.use(NLP_FB_Express.BLOBS_PATH, async (req: Request, res: Response): Promise<void> => {
-            const dbManager = new DBManager();
+            let database;
             try {
-                await dbManager.attach(options);
+                database = await this._dbConnectionPool.attach();
 
-                const result = await dbManager.query(`
+                const result = await database.query(`
                     SELECT ${req.query.field} AS "binaryField"
                     FROM ${req.query.table}
                     WHERE ${req.query.primaryField} = ${req.query.primaryKey} 
                 `);
-                await DBManager.readBlob(result[0].binaryField, res);
+                await Database.readBlob(result[0].binaryField, res);
 
             } catch (error) {
                 res.end();
                 console.error(error);
             } finally {
                 try {
-                    await dbManager.detach();
+                    await database.detach();
                 } catch (error) {
                     console.log(error);
                 }
@@ -69,15 +75,14 @@ export default class NLP_FB_Express extends BaseRouter<NLPExpressOptions> {
             if (!this._nlpSchema || !this._nlpSchema.schema) throw new Error("Temporarily unavailable");
 
             const startTime = Date.now();
+            const database = await this._dbConnectionPool.attach();
 
-            const context = new GraphQLContext(options);
-            await context.attach();
             return {
                 schema: this._nlpSchema.schema,
                 graphiql: options.graphiql,
-                context: context,
+                context: new GraphQLContext(database),
                 async extensions() {
-                    await context.detach();
+                    await database.detach();
                     return {runTime: (Date.now() - startTime) + " мсек"};
                 }
             };

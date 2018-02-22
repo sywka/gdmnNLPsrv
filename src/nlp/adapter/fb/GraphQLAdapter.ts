@@ -4,7 +4,7 @@ import {GraphQLResolveInfo} from "graphql/type/definition";
 import {connectionFromArray} from "graphql-relay";
 import {GraphQLUrl} from "graphql-url";
 import {Args, FilterTypes, IField, IGraphQLSchemaAdapter, ITable, NLPSchemaTypes, Value} from "../../NLPSchema";
-import DBManager, {DBOptions} from "./DBManager";
+import Database, {DBOptions} from "./Database";
 
 export type BlobLinkCreator = (id: IBlobID) => string;
 
@@ -57,8 +57,8 @@ export class GraphQLAdapter implements IGraphQLSchemaAdapter<IFBGraphQLContext> 
         }
     }
 
-    private static async _getDBTables(dbManager: DBManager): Promise<ITable[]> {
-        const result: any[] = await dbManager.query(`
+    private static async _getDBTables(database: Database): Promise<ITable[]> {
+        const result: any[] = await database.query(`
           SELECT
             TRIM(r.rdb$relation_name)                                   AS "tableName",
             TRIM(rlf.rdb$relation_name) 
@@ -127,8 +127,8 @@ export class GraphQLAdapter implements IGraphQLSchemaAdapter<IFBGraphQLContext> 
         return NestHydrationJS().nest(result, definition);
     }
 
-    private static async _getNLPTables(dbManager: DBManager): Promise<ITable[]> {
-        const result: any[] = await dbManager.query(`
+    private static async _getNLPTables(database: Database): Promise<ITable[]> {
+        const result: any[] = await database.query(`
           SELECT
             TRIM(tables.usr$relation_name)                              AS "tableName",
             TRIM(tables.usr$relation_name) 
@@ -180,18 +180,18 @@ export class GraphQLAdapter implements IGraphQLSchemaAdapter<IFBGraphQLContext> 
         return NestHydrationJS().nest(result, definition);
     }
 
-    quote(str: string): string {
+    public quote(str: string): string {
         return `"${str}"`;
     }
 
     public async getTables(): Promise<ITable[]> {
-        const dbManager = new DBManager();
+        const database = new Database();
         try {
-            await dbManager.attach(this._options);
-            const dbTables = await GraphQLAdapter._getDBTables(dbManager);
+            await database.attach(this._options);
+            const dbTables = await GraphQLAdapter._getDBTables(database);
 
             try {
-                const nlpTables = await GraphQLAdapter._getNLPTables(dbManager);
+                const nlpTables = await GraphQLAdapter._getNLPTables(database);
 
                 nlpTables.forEach((nlpTable) => {
                     const table = dbTables.find((dbTable) => dbTable.name === nlpTable.name);
@@ -213,7 +213,7 @@ export class GraphQLAdapter implements IGraphQLSchemaAdapter<IFBGraphQLContext> 
             return dbTables;
         } finally {
             try {
-                await dbManager.detach();
+                await database.detach();
             } catch (error) {
                 console.log(error);
             }
@@ -264,7 +264,7 @@ export class GraphQLAdapter implements IGraphQLSchemaAdapter<IFBGraphQLContext> 
             tableField = `CAST(${tableField} AS TIMESTAMP)`;
         }
         if (value) {
-            value = DBManager.escape(value);
+            value = Database.escape(value);
         }
         switch (filterType) {
             case FilterTypes.IS_EMPTY:

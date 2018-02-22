@@ -150,6 +150,12 @@ export class NLPSchema<GraphQLContext> {
         }, {});
     }
 
+    private static _joinConditions(array: any[], separator: string): string {
+        if (!array.length) return "";
+        if (array.length > 1) return `(${array.join(separator)})`;
+        return array.join(separator);
+    }
+
     public async createSchema(hiddenProgress?: boolean): Promise<GraphQLSchema> {
         const total = 100;
         const progress = new Progress(total + 10, hiddenProgress);
@@ -206,6 +212,7 @@ export class NLPSchema<GraphQLContext> {
                     );
                     if (condition) conditions.push(condition);
                 });
+
             } else if (typeof filter === "string") {
                 const condition = this._options.adapter.createSQLCondition(
                     filterName,
@@ -213,6 +220,7 @@ export class NLPSchema<GraphQLContext> {
                     NLPSchema._findOriginalField(table, filter)
                 );
                 if (condition) conditions.push(condition);
+
             } else if (typeof filter === "object") {
                 conditions = Object.keys(filter).reduce((conditions, fieldName) => {
                     const value: any = filter[fieldName];
@@ -226,7 +234,8 @@ export class NLPSchema<GraphQLContext> {
                     return conditions;
                 }, conditions);
             }
-            if (conditions.length) groupsConditions.push(`(${conditions.join(" AND ")})`);
+
+            if (conditions.length) groupsConditions.push(NLPSchema._joinConditions(conditions, " AND "));
             return groupsConditions;
         }, []);
 
@@ -238,23 +247,23 @@ export class NLPSchema<GraphQLContext> {
                 conditions.push(this._createSQLWhere(table, tableAlias, item, context));
                 return conditions;
             }, []);
-            if (not.length) groupsConditions.push(`NOT (${not.join(" AND ")})`);
+            if (not.length) groupsConditions.push(`NOT ${NLPSchema._joinConditions(not, " AND ")}`);
         }
         if (where.or) {
             const or = where.or.reduce((conditions, item) => {
                 conditions.push(this._createSQLWhere(table, tableAlias, item, context));
                 return conditions;
             }, []);
-            if (or.length) groupsConditions.push(`(${or.join(" OR ")})`);
+            if (or.length) groupsConditions.push(NLPSchema._joinConditions(or, " OR "));
         }
         if (where.and) {
             const and = where.and.reduce((conditions, item) => {
                 conditions.push(this._createSQLWhere(table, tableAlias, item, context));
                 return conditions;
             }, []);
-            if (and.length) groupsConditions.push(`(${and.join(" AND ")})`);
+            if (and.length) groupsConditions.push(NLPSchema._joinConditions(and, " AND "));
         }
-        return groupsConditions.join(" AND ");
+        return NLPSchema._joinConditions(groupsConditions, " AND ");
     }
 
     private _createSchema(context: INLPContext): GraphQLSchema {

@@ -24,7 +24,7 @@ export default class ApiV1 extends BaseRouter<void> {
             database: config.get("db.path"),
 
             graphiql: true,
-            maxPool: 100
+            maxConnectionPool: 100
         }).router);
     }
 }
