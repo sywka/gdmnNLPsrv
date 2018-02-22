@@ -3,7 +3,7 @@ import joinMonster from "join-monster";
 import {GraphQLResolveInfo} from "graphql/type/definition";
 import {connectionFromArray} from "graphql-relay";
 import {GraphQLUrl} from "graphql-url";
-import {Args, FilterTypes, IGraphQLSchemaAdapter, ITable, NLPSchemaTypes, Value} from "../../NLPSchema";
+import {Args, FilterTypes, IField, IGraphQLSchemaAdapter, ITable, NLPSchemaTypes, Value} from "../../NLPSchema";
 import DBManager, {DBOptions} from "./DBManager";
 
 export type BlobLinkCreator = (id: IBlobID) => string;
@@ -226,7 +226,7 @@ export class GraphQLAdapter implements IGraphQLSchemaAdapter<IFBGraphQLContext> 
             const field = source[info.fieldName];
 
             //resolve BLOB fields
-            if (info.returnType === GraphQLUrl && typeof(field) === "function") {
+            if (info.returnType === GraphQLUrl && typeof field === "function") {
                 const {sqlTable, uniqueKey} = (info.parentType as any)._typeConfig;
                 const id: IBlobID = {
                     table: sqlTable,
@@ -258,22 +258,31 @@ export class GraphQLAdapter implements IGraphQLSchemaAdapter<IFBGraphQLContext> 
         };
     }
 
-    public createSQLCondition(type: FilterTypes, field: string, value: Value, context: IFBGraphQLContext): string {
-        switch (type) {
+    public createSQLCondition(filterType: FilterTypes, tableAlias: string, field: IField, value?: Value): string {
+        let tableField = `${tableAlias}.${this.quote(field.name)}`;
+        if (field.type === NLPSchemaTypes.DATE) {
+            tableField = `CAST(${tableField} AS TIMESTAMP)`;
+        }
+        if (value) {
+            value = DBManager.escape(value);
+        }
+        switch (filterType) {
+            case FilterTypes.IS_EMPTY:
+                return `${tableField} = ''`;
             case FilterTypes.EQUALS:
-                return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} = ${DBManager.escape(value)}`;
+                return `${tableField} = ${value}`;
 
             case FilterTypes.CONTAINS:
-                return `${field} CONTAINING ${DBManager.escape(value)}`;
+                return `${tableField} CONTAINING ${value}`;
             case FilterTypes.BEGINS:
-                return `${field} STARTING WITH ${DBManager.escape(value)}`;
+                return `${tableField} STARTING WITH ${value}`;
             case FilterTypes.ENDS:
-                return `REVERSE(${field}) STARTING WITH ${DBManager.escape(value)}`;
+                return `REVERSE(${tableField}) STARTING WITH ${value}`;
 
             case FilterTypes.GREATER:
-                return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} > ${DBManager.escape(value)}`;
+                return `${tableField} > ${value}`;
             case FilterTypes.LESS:
-                return `${value instanceof Date ? `CAST(${field} AS TIMESTAMP)` : field} < ${DBManager.escape(value)}`;
+                return `${tableField} < ${value}`;
             default:
                 return "";
         }

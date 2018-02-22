@@ -53,7 +53,7 @@ export interface IGraphQLSchemaAdapter<GraphQLContext> {
 
     resolve(source: any, args: Args, context: GraphQLContext, info: GraphQLResolveInfo): any;
 
-    createSQLCondition(type: FilterTypes, field: string, value: Value, context: GraphQLContext): string;
+    createSQLCondition(filterType: FilterTypes, tableAlias: string, field: IField, value?: Value): string;
 }
 
 export interface ISchemaOptions<GraphQLContext> {
@@ -124,8 +124,8 @@ export class NLPSchema<GraphQLContext> {
         return "";
     }
 
-    private static _findOriginalFieldName(table: ITable, fieldName): string {
-        return table.fields.find((field) => NLPSchema._escapeName(table.fields, field.name) === fieldName).name;
+    private static _findOriginalField(table: ITable, escapedFieldName): IField {
+        return table.fields.find((field) => NLPSchema._escapeName(table.fields, field.name) === escapedFieldName);
     }
 
     private static _createDescription(base: IBaseIndexing): string {
@@ -186,8 +186,8 @@ export class NLPSchema<GraphQLContext> {
     private _createSQLWhere(table: ITable, tableAlias: string, where: any, context: GraphQLContext): string {
         if (!where) return "";
 
-        let groupsConditions = Object.keys(where).reduce((groupsConditions, filterName) => {
-            switch (filterName) {
+        let groupsConditions = Object.keys(where).reduce((groupsConditions, filterName: FilterTypes) => {
+            switch (filterName as any) {
                 case "not":
                 case "or":
                 case "and":
@@ -196,17 +196,36 @@ export class NLPSchema<GraphQLContext> {
             }
 
             const filter: any = where[filterName];
-            let conditions = Object.keys(filter).reduce((conditions, fieldName) => {
-                const value: any = filter[fieldName];
+            let conditions = [];
+            if (Array.isArray(filter)) {
+                filter.forEach((item) => {
+                    const condition = this._options.adapter.createSQLCondition(
+                        filterName,
+                        tableAlias,
+                        NLPSchema._findOriginalField(table, item)
+                    );
+                    if (condition) conditions.push(condition);
+                });
+            } else if (typeof filter === "string") {
                 const condition = this._options.adapter.createSQLCondition(
-                    filterName as FilterTypes,
-                    `${tableAlias}.${this._options.adapter.quote(NLPSchema._findOriginalFieldName(table, fieldName))}`,
-                    value,
-                    context
+                    filterName,
+                    tableAlias,
+                    NLPSchema._findOriginalField(table, filter)
                 );
                 if (condition) conditions.push(condition);
-                return conditions;
-            }, []);
+            } else if (typeof filter === "object") {
+                conditions = Object.keys(filter).reduce((conditions, fieldName) => {
+                    const value: any = filter[fieldName];
+                    const condition = this._options.adapter.createSQLCondition(
+                        filterName,
+                        tableAlias,
+                        NLPSchema._findOriginalField(table, fieldName),
+                        value
+                    );
+                    if (condition) conditions.push(condition);
+                    return conditions;
+                }, conditions);
+            }
             if (conditions.length) groupsConditions.push(`(${conditions.join(" AND ")})`);
             return groupsConditions;
         }, []);
@@ -341,6 +360,21 @@ export class NLPSchema<GraphQLContext> {
             }, {})
         });
 
+        const emptyFieldsEnumType = new GraphQLEnumType({
+            name: `IS_EMPTY_FIELDS_${NLPSchema._escapeName(context.tables, table.name)}`,
+            values: table.fields.reduce((values, field) => {
+                switch (field.type) {
+                    case NLPSchemaTypes.BLOB:
+                    case NLPSchemaTypes.STRING:
+                        values[NLPSchema._escapeName(table.fields, field.name)] = {
+                            value: field.name,
+                            description: NLPSchema._createDescription(field)
+                        };
+                }
+                return values;
+            }, {})
+        });
+
         const beginsOrEndsType = new GraphQLInputObjectType({
             name: `BEGINS_OR_ENDS_${NLPSchema._escapeName(context.tables, table.name)}`,
             fields: table.fields.reduce((fields, field) => {
@@ -392,6 +426,9 @@ export class NLPSchema<GraphQLContext> {
                 } : {},
                 ...nullableFieldsEnumType.getValues().length ? {
                     isNull: {type: nullableFieldsEnumType}
+                } : {},
+                ...emptyFieldsEnumType.getValues().length ? {
+                    isEmpty: {type: emptyFieldsEnumType}
                 } : {},
                 or: {type: new GraphQLList(inputType)},
                 and: {type: new GraphQLList(inputType)},
@@ -551,6 +588,7 @@ export enum NLPSchemaTypes {
 export enum FilterTypes {
     EQUALS = "equals",
 
+    IS_EMPTY = "isEmpty",
     CONTAINS = "contains",
     BEGINS = "begins",
     ENDS = "ends",
