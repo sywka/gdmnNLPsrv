@@ -1,9 +1,13 @@
 import path from "path";
 import firebird from "node-firebird";
 
-type BlobField = (callback: (err, name, event) => void) => void;
+type BlobField = (callback: (err: Error, name: string, event: IBlobEventEmitter) => void) => void;
 
 export type DBOptions = firebird.Options;
+
+export interface IBlobEventEmitter extends NodeJS.EventEmitter {
+    pipe(destination: NodeJS.WritableStream): void;
+}
 
 abstract class Base<Source extends (firebird.Database | firebird.Transaction)> {
 
@@ -13,27 +17,26 @@ abstract class Base<Source extends (firebird.Database | firebird.Transaction)> {
         this._source = source;
     }
 
-    public static async readBlob(blobFieldResult: BlobField): Promise<Buffer>;
-    public static async readBlob(blobFieldResult: BlobField, stream: NodeJS.WritableStream): Promise<void>;
-    public static async readBlob(blobFieldResult: BlobField, stream?: NodeJS.WritableStream): Promise<any> {
+    public static async blobToStream(blob: BlobField): Promise<IBlobEventEmitter> {
         return new Promise<any>((resolve, reject) => {
-            blobFieldResult((err, name, event) => {
+            blob((err, name, event) => {
                 if (err) return reject(err);
+                resolve(event);
+            });
+        });
+    }
 
-                if (stream) {
-                    event.pipe(stream);
-                    return stream.on("finish", () => resolve());
+    public static async blobToBuffer(blob: BlobField): Promise<Buffer> {
+        const blobStream = await Base.blobToStream(blob);
 
-                } else {
-                    let chunks = [], length = 0;
-                    event.on("data", (chunk: Buffer) => {
-                        chunks.push(chunk);
-                        length += chunk.length;
-                    });
-                    event.on("end", () => {
-                        return resolve(Buffer.concat(chunks, length));
-                    });
-                }
+        return new Promise<Buffer>((resolve, reject) => {
+            let chunks = [], length = 0;
+            blobStream.on("data", (chunk: Buffer) => {
+                chunks.push(chunk);
+                length += chunk.length;
+            });
+            blobStream.on("end", () => {
+                return resolve(Buffer.concat(chunks, length));
             });
         });
     }
@@ -160,7 +163,7 @@ export default class Database extends Base<firebird.Database> {
     }
 }
 
-export class DBConnectionPool {
+export class ConnectionPool {
 
     public static DEFAULT_MAX_POOL = 10;
 
@@ -170,7 +173,7 @@ export class DBConnectionPool {
         return Boolean(this._connectionPool);
     }
 
-    public createConnectionPool(options: DBOptions, max: number = DBConnectionPool.DEFAULT_MAX_POOL): void {
+    public createConnectionPool(options: DBOptions, max: number = ConnectionPool.DEFAULT_MAX_POOL): void {
         if (this._connectionPool) throw new Error("Connection pool already created");
         this._connectionPool = firebird.pool(max, Database.bindOptions(options), null);
     }

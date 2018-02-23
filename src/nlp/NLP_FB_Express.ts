@@ -1,6 +1,6 @@
 import {NextFunction, Request, Response, Router} from "express";
 import graphqlHTTP from "express-graphql";
-import Database, {DBConnectionPool, DBOptions} from "./adapter/fb/Database";
+import Database, {ConnectionPool, DBOptions} from "./adapter/fb/Database";
 import GraphQLContext from "./adapter/fb/GraphQLContext";
 import {GraphQLAdapter, IBlobID} from "./adapter/fb/GraphQLAdapter";
 import {NLPSchema} from "./NLPSchema";
@@ -16,14 +16,14 @@ export default class NLP_FB_Express extends BaseRouter<NLPExpressOptions> {
     public static BLOBS_PATH = "/blobs";
 
     protected _routerUrl: string = "";
-    protected _dbConnectionPool: DBConnectionPool;
+    protected _connectionPool: ConnectionPool;
     protected _nlpSchema: NLPSchema<GraphQLContext>;
 
     constructor(options: NLPExpressOptions) {
         super(options);
 
-        this._dbConnectionPool = new DBConnectionPool();
-        this._dbConnectionPool.createConnectionPool(options, options.maxConnectionPool);
+        this._connectionPool = new ConnectionPool();
+        this._connectionPool.createConnectionPool(options, options.maxConnectionPool);
 
         this._nlpSchema = new NLPSchema({
             adapter: new GraphQLAdapter({
@@ -50,14 +50,15 @@ export default class NLP_FB_Express extends BaseRouter<NLPExpressOptions> {
         router.use(NLP_FB_Express.BLOBS_PATH, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
             let database;
             try {
-                database = await this._dbConnectionPool.attach();
+                database = await this._connectionPool.attach();
 
                 const result = await database.query(`
                     SELECT ${req.query.field} AS "binaryField"
                     FROM ${req.query.table}
                     WHERE ${req.query.primaryField} = ${req.query.primaryKey} 
                 `);
-                await Database.readBlob(result[0].binaryField, res);
+                const blobStream = await Database.blobToStream(result[0].binaryField);
+                blobStream.pipe(res);
 
             } catch (error) {
                 next(error);
@@ -74,7 +75,7 @@ export default class NLP_FB_Express extends BaseRouter<NLPExpressOptions> {
             if (!this._nlpSchema || !this._nlpSchema.schema) throw new Error("Temporarily unavailable");
 
             const startTime = Date.now();
-            const database = await this._dbConnectionPool.attach();
+            const database = await this._connectionPool.attach();
 
             return {
                 schema: this._nlpSchema.schema,

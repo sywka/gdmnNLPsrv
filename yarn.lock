@@ -147,13 +147,13 @@
   version "0.12.4"
   resolved "https://registry.yarnpkg.com/@types/graphql/-/graphql-0.12.4.tgz#d43bb55d45c6de0178bbd11dd59d04fd42138d94"
 
-"@types/hapi@^16.1.10":
-  version "16.1.13"
-  resolved "https://registry.yarnpkg.com/@types/hapi/-/hapi-16.1.13.tgz#f0460fdf24d5be096c4b52a6d12b245e42620e05"
+"@types/hapi@^17.0.1":
+  version "17.0.1"
+  resolved "https://registry.yarnpkg.com/@types/hapi/-/hapi-17.0.1.tgz#8638e51ccf7dc54110ecf3415722a26906200288"
   dependencies:
     "@types/boom" "^4"
     "@types/catbox" "*"
-    "@types/events" "*"
+    "@types/iron" "*"
     "@types/joi" "*"
     "@types/mimos" "*"
     "@types/node" "*"
@@ -163,6 +163,12 @@
 "@types/http-assert@*":
   version "1.2.2"
   resolved "https://registry.yarnpkg.com/@types/http-assert/-/http-assert-1.2.2.tgz#17dfe5a82184a8898935d96fe2eaedd37d22d9a4"
+
+"@types/iron@*":
+  version "5.0.1"
+  resolved "https://registry.yarnpkg.com/@types/iron/-/iron-5.0.1.tgz#5420bbda8623c48ee51b9a78ebad05d7305b4b24"
+  dependencies:
+    "@types/node" "*"
 
 "@types/joi@*":
   version "13.0.5"
