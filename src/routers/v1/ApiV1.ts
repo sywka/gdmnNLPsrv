@@ -1,6 +1,7 @@
 import {NextFunction, Request, Response, Router} from "express";
 import config from "config";
 import {express} from "graphql-voyager/middleware";
+import {HttpError, ResponseType} from "../../middlewares/errorMiddleware";
 import BaseRouter from "../../nlp/BaseRouter";
 import NLP_FB_Express from "../../nlp/NLP_FB_Express";
 
@@ -26,5 +27,8 @@ export default class ApiV1 extends BaseRouter<void> {
             graphiql: true,
             maxConnectionPool: 100
         }).router);
+        router.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+            next(new HttpError(ResponseType.JSON, 500, err));
+        });
     }
 }

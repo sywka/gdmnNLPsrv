@@ -1,4 +1,4 @@
-import {Request, Response} from "express";
+import {NextFunction, Request, Response} from "express";
 import http from "http";
 
 export enum ResponseType {
@@ -15,7 +15,7 @@ export enum ErrorCode {
 }
 
 export function getErrorMiddleware() {
-    return (err: any, req: Request, res: Response) => {
+    return (err: any, req: Request, res: Response, next: NextFunction) => {
         if (!(err instanceof HttpError)) {
             err = new HttpError(ResponseType.HTML, 500, err);
         }
@@ -56,10 +56,10 @@ export function getErrorMiddleware() {
 
 export class CodeError extends Error {
 
-    public code: number;
+    public code: ErrorCode;
     public data: any;
 
-    constructor(code: number, message: string, data?: any) {
+    constructor(code: ErrorCode, message: string, data?: any) {
         super(message);
         this.code = code;
         this.message = message;
@@ -71,11 +71,11 @@ export class CodeError extends Error {
 
 export class HttpError extends CodeError {
 
-    public responseFormat: number;
+    public responseFormat: ResponseType;
     public cause: Error;
 
-    constructor(responseFormat: ResponseType, code: number, cause?: Error, data?: any) {
-        super(code, http.STATUS_CODES[code] || http.STATUS_CODES[500], data);
+    constructor(responseFormat: ResponseType, status: number, cause?: Error, data?: any) {
+        super(status, http.STATUS_CODES[status] || http.STATUS_CODES[500], data);
         this.responseFormat = responseFormat;
         this.cause = cause;
 

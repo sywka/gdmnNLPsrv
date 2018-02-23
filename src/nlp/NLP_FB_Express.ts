@@ -47,7 +47,7 @@ export default class NLP_FB_Express extends BaseRouter<NLPExpressOptions> {
             req.query = JSON.parse(new Buffer(req.query.id, "base64").toString());
             next();
         });
-        router.use(NLP_FB_Express.BLOBS_PATH, async (req: Request, res: Response): Promise<void> => {
+        router.use(NLP_FB_Express.BLOBS_PATH, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
             let database;
             try {
                 database = await this._dbConnectionPool.attach();
@@ -60,8 +60,7 @@ export default class NLP_FB_Express extends BaseRouter<NLPExpressOptions> {
                 await Database.readBlob(result[0].binaryField, res);
 
             } catch (error) {
-                res.end();
-                console.error(error);
+                next(error);
             } finally {
                 try {
                     await database.detach();
