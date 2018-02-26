@@ -2,6 +2,7 @@ import {
     GraphQLBoolean,
     GraphQLEnumType,
     GraphQLFloat,
+    GraphQLID,
     GraphQLInputObjectType,
     GraphQLInt,
     GraphQLList,
@@ -13,7 +14,7 @@ import {
 } from "graphql";
 import GraphQLDate from "graphql-date";
 import {GraphQLUrl} from "graphql-url";
-import {GraphQLFieldConfigMap, GraphQLResolveInfo, GraphQLType} from "graphql/type/definition";
+import {GraphQLFieldConfigMap, GraphQLResolveInfo} from "graphql/type/definition";
 import {connectionArgs, connectionDefinitions, GraphQLConnectionDefinitions} from "graphql-relay";
 import Progress from "./adapter/fb/Progress";
 
@@ -89,6 +90,7 @@ export class NLPSchema<GraphQLContext> {
     }
 
     private static _convertPrimitiveFieldType(field: IField): GraphQLScalarType {
+        if (field.primary) return GraphQLID;
         switch (field.type) {
             case NLPSchemaTypes.BLOB:
                 return GraphQLUrl;
@@ -478,14 +480,56 @@ export class NLPSchema<GraphQLContext> {
             sqlTable: table.name,
             uniqueKey: NLPSchema._findPrimaryFieldName(table),
             description: NLPSchema._createDescription(table),
-            fields: () => {
-                const fields = this._createFields(context, table, table.fields);
-                const emulatedFields = this._createEmulatedFields(context, table);
-                return {...fields, ...emulatedFields};
-            }
+            fields: () => this._createTypeFields(context, table)
         });
         context.types.push(type);
         return type;
+    }
+
+    private _createTypeFields(context: INLPContext, table: ITable): GraphQLFieldConfigMap<void, void> {
+        const fields = this._createFields(table.fields);
+        const linkFields = this._createLinkFields(context, table, table.fields);
+        const emulatedFields = this._createEmulatedFields(context, table);
+        return {...fields, ...linkFields, ...emulatedFields};
+    }
+
+    private _createLinkFields(context: INLPContext, table: ITable, fields: IField[]): GraphQLFieldConfigMap<void, void> {
+        return fields.reduce((resultFields, field) => {
+            if (field.tableNameRef) {
+                const tableRef = context.tables.find((table) => (
+                    table.name === NLPSchema._escapeName(context.tables, field.tableNameRef)
+                ));
+                if (tableRef) {
+                    const fieldName = NLPSchema._escapeName(fields, `link_${field.name}`);
+                    const fieldType = this._createConnectionType(context, this._createType(context, tableRef));
+
+                    resultFields[fieldName] = {
+                        type: field.nonNull ? new GraphQLNonNull(fieldType) : fieldType,
+                        description: NLPSchema._createDescription({
+                            id: field.id,
+                            name: field.name,
+                            indices: field.refs && field.refs.length ? field.refs[0].indices : null
+                        }),
+                        args: {
+                            ...connectionArgs,
+                            where: {type: this._createFilterInputType(context, tableRef)},
+                            order: {type: new GraphQLList(this._createSortingInputType(context, tableRef))}
+                        },
+                        resolve: this._options.adapter.resolve.bind(this._options.adapter),
+                        sqlColumn: field.name,
+                        sqlJoin: (parentTable, joinTable) => (
+                            `${parentTable}.${this._options.adapter.quote(field.name)}` +
+                            ` = ${joinTable}.${this._options.adapter.quote(field.fieldNameRef)}`
+                        ),
+                        where: (tableAlias, args, context) => (
+                            this._createSQLWhere(table, tableAlias, args.where, context)
+                        ),
+                        orderBy: (args) => NLPSchema._createObjectOrderBy(args.order)
+                    };
+                }
+            }
+            return resultFields;
+        }, {});
     }
 
     //TODO optimize (cache)
@@ -505,7 +549,9 @@ export class NLPSchema<GraphQLContext> {
                             }
                             return fields;
                         }, []);
-                        return this._createFields(context, table, refFields);
+                        const fields = this._createFields(refFields);
+                        const linkFields = this._createLinkFields(context, table, refFields);
+                        return {...fields, ...linkFields};
                     }
                 });
                 if (!Object.keys(emulatedType.getFields()).length) return fields;
@@ -538,52 +584,16 @@ export class NLPSchema<GraphQLContext> {
         }, {});
     }
 
-    private _createFields(context: INLPContext, table: ITable, fields: IField[]): GraphQLFieldConfigMap<void, void> {
+    private _createFields(fields: IField[]): GraphQLFieldConfigMap<void, void> {
         return fields.reduce((resultFields, field) => {
-            let fieldName: string;
-            let fieldType: GraphQLType;
-            let fieldDescription: string;
-            let sqlJoin: (parentTable: string, joinTable: string, args: any) => string;
-            let args: any;
-            let tableRef: ITable;
-            if (field.tableNameRef &&
-                (tableRef = context.tables.find((table) => (
-                    table.name === NLPSchema._escapeName(context.tables, field.tableNameRef)
-                )))
-            ) {
-                fieldName = NLPSchema._escapeName(fields, `link_${field.name}`);
-                fieldType = this._createConnectionType(context, this._createType(context, tableRef));
-                fieldDescription = NLPSchema._createDescription({
-                    id: field.id,
-                    name: field.name,
-                    indices: field.refs && field.refs.length ? field.refs[0].indices : null
-                });
-                sqlJoin = (parentTable, joinTable) => (
-                    `${parentTable}.${this._options.adapter.quote(field.name)}` +
-                    ` = ${joinTable}.${this._options.adapter.quote(field.fieldNameRef)}`
-                );
-                args = {
-                    ...connectionArgs,
-                    where: {type: this._createFilterInputType(context, tableRef)},
-                    order: {type: new GraphQLList(this._createSortingInputType(context, tableRef))}
-                };
-            } else {
-                fieldName = NLPSchema._escapeName(fields, field.name);
-                fieldType = NLPSchema._convertPrimitiveFieldType(field);
-                fieldDescription = NLPSchema._createDescription(field);
-            }
+            const fieldName = NLPSchema._escapeName(fields, field.name);
+            const fieldType = NLPSchema._convertPrimitiveFieldType(field);
 
             resultFields[fieldName] = {
                 type: field.nonNull ? new GraphQLNonNull(fieldType) : fieldType,
-                description: fieldDescription,
-                args,
+                description: NLPSchema._createDescription(field),
                 resolve: this._options.adapter.resolve.bind(this._options.adapter),
-                sqlColumn: field.name,
-                sqlJoin,
-                where: (tableAlias, args, context) => (
-                    this._createSQLWhere(table, tableAlias, args.where, context)
-                ),
-                orderBy: (args) => NLPSchema._createObjectOrderBy(args.order)
+                sqlColumn: field.name
             };
             return resultFields;
         }, {});
