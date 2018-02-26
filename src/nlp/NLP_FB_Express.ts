@@ -2,11 +2,11 @@ import {NextFunction, Request, Response, Router} from "express";
 import graphqlHTTP from "express-graphql";
 import Database, {ConnectionPool, DBOptions} from "./adapter/fb/Database";
 import GraphQLContext from "./adapter/fb/GraphQLContext";
-import {GraphQLAdapter, IBlobID} from "./adapter/fb/GraphQLAdapter";
+import {GraphQLAdapter, IBlobID, ISchemaOptions} from "./adapter/fb/GraphQLAdapter";
 import {NLPSchema} from "./NLPSchema";
 import BaseRouter from "./BaseRouter";
 
-export interface NLPExpressOptions extends DBOptions {
+export interface NLPExpressOptions extends ISchemaOptions, DBOptions {
     graphiql?: boolean;
     maxConnectionPool?: number;
 }
@@ -31,7 +31,7 @@ export default class NLP_FB_Express extends BaseRouter<NLPExpressOptions> {
                 blobLinkCreator: (id: IBlobID) => {
                     const idParam = new Buffer(`${JSON.stringify(id)}`).toString("base64");
                     return `${this._routerUrl}${NLP_FB_Express.BLOBS_PATH}?id=${idParam}`;
-                }
+                },
             })
         });
         this._nlpSchema.createSchema().catch(console.error);

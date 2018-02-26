@@ -472,7 +472,7 @@ export class NLPSchema<GraphQLContext> {
         if (duplicate) return duplicate;
 
         context.progress.tableTick(table);
-        //TODO not create if fields empty
+        //TODO not create if fields empty?
         const type: GraphQLObjectType = new GraphQLObjectType({
             name: NLPSchema._escapeName(context.tables, table.name),
             sqlTable: table.name,

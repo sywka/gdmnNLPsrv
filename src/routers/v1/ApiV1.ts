@@ -25,7 +25,14 @@ export default class ApiV1 extends BaseRouter<void> {
             database: config.get("db.path"),
 
             graphiql: true,
-            maxConnectionPool: 100
+            maxConnectionPool: 100,
+            // excludePattern: "AT_+",
+            include: [
+                "GD_CONTACT",
+                "GD_PEOPLE",
+                // "GD_PLACE",
+                // "WG_POSITION"
+            ]
         }).router);
         router.use((err: Error, req: Request, res: Response, next: NextFunction) => {
             next(new HttpError(ResponseType.JSON, 500, err));
