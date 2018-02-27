@@ -3,8 +3,8 @@ import joinMonster from "join-monster";
 import {GraphQLResolveInfo} from "graphql/type/definition";
 import {connectionFromArray} from "graphql-relay";
 import {GraphQLUrl} from "graphql-url";
-import {Args, FilterTypes, IField, IGraphQLSchemaAdapter, ITable, NLPSchemaTypes, Value} from "../../NLPSchema";
-import Database, {DBOptions} from "./Database";
+import {Args, FilterTypes, IField, ISchemaAdapter, ITable, SchemaFieldTypes, Value} from "../../Schema";
+import FBDatabase, {DBOptions} from "./FBDatabase";
 
 export type BlobLinkCreator = (id: IBlobID) => string;
 
@@ -14,14 +14,14 @@ export interface IFBGraphQLContext {
     execute(query: string, params?: any[]): Promise<any[]>;
 }
 
-export interface ISchemaOptions {
+export interface ISchemaDetailOptions {
     include?: string[];
     exclude?: string[];
     includePattern?: string;
     excludePattern?: string;
 }
 
-export interface IAdapterOptions extends DBOptions, ISchemaOptions {
+export interface IAdapterOptions extends DBOptions, ISchemaDetailOptions {
     blobLinkCreator: BlobLinkCreator;
 }
 
@@ -32,7 +32,7 @@ export interface IBlobID {
     primaryKey: string;
 }
 
-export class GraphQLAdapter implements IGraphQLSchemaAdapter<IFBGraphQLContext> {
+export default class FirebirdAdapter implements ISchemaAdapter<IFBGraphQLContext> {
 
     protected _options: IAdapterOptions;
 
@@ -40,27 +40,27 @@ export class GraphQLAdapter implements IGraphQLSchemaAdapter<IFBGraphQLContext> 
         this._options = options;
     }
 
-    private static _convertType(type: number): NLPSchemaTypes {
+    private static _convertType(type: number): SchemaFieldTypes {
         switch (type) {
             case 261:
-                return NLPSchemaTypes.BLOB;
+                return SchemaFieldTypes.BLOB;
             case 7:
             case 8:
             case 16:
-                return NLPSchemaTypes.INT;
+                return SchemaFieldTypes.INT;
             case 10:
             case 11:
             case 27:
-                return NLPSchemaTypes.FLOAT;
+                return SchemaFieldTypes.FLOAT;
             case 12:
             case 13:
             case 35:
-                return NLPSchemaTypes.DATE;
+                return SchemaFieldTypes.DATE;
             case 14:
             case 37:
             case 40:
             default:
-                return NLPSchemaTypes.STRING;
+                return SchemaFieldTypes.STRING;
         }
     }
 
@@ -69,32 +69,10 @@ export class GraphQLAdapter implements IGraphQLSchemaAdapter<IFBGraphQLContext> 
     }
 
     public async getTables(): Promise<ITable[]> {
-        const database = new Database();
+        const database = new FBDatabase();
         try {
             await database.attach(this._options);
-            const dbTables = await this._getDBTables(database);
-
-            try {
-                const nlpTables = await this._getNLPTables(database);
-
-                nlpTables.forEach((nlpTable) => {
-                    const table = dbTables.find((dbTable) => dbTable.name === nlpTable.name);
-                    if (table) {
-                        table.indices = nlpTable.indices;
-                        nlpTable.fields.forEach((nlpField) => {
-                            const field = table.fields.find((tableField) => tableField.id === nlpField.id);
-                            if (field) {
-                                field.indices = nlpField.indices;
-                                field.refs = nlpField.refs;
-                            }
-                        });
-                    }
-                });
-            } catch (error) {
-                console.error(`An error occurred while reading the nlp schema: ${error.message}`);
-            }
-
-            return dbTables;
+            return await this._queryToDatabase(database);
         } finally {
             try {
                 await database.detach();
@@ -144,11 +122,11 @@ export class GraphQLAdapter implements IGraphQLSchemaAdapter<IFBGraphQLContext> 
 
     public createSQLCondition(filterType: FilterTypes, tableAlias: string, field: IField, value?: Value): string {
         let tableField = `${tableAlias}.${this.quote(field.name)}`;
-        if (field.type === NLPSchemaTypes.DATE) {
+        if (field.type === SchemaFieldTypes.DATE) {
             tableField = `CAST(${tableField} AS TIMESTAMP)`;
         }
         if (value) {
-            value = Database.escape(value);
+            value = FBDatabase.escape(value);
         }
         switch (filterType) {
             case FilterTypes.IS_EMPTY:
@@ -172,9 +150,11 @@ export class GraphQLAdapter implements IGraphQLSchemaAdapter<IFBGraphQLContext> 
         }
     }
 
-    private async _getDBTables(database: Database): Promise<ITable[]> {
-        const include = this._options.include ? this._options.include.map((item) => `'${item}'`) : [];
-        const exclude = this._options.exclude ? this._options.exclude.map((item) => `'${item}'`) : [];
+    protected async _queryToDatabase(database: FBDatabase): Promise<ITable[]> {
+        const {include, exclude, includePattern, excludePattern} = this._options;
+
+        const includeEscaped = include ? include.map((item) => `'${item}'`) : [];
+        const excludeEscaped = exclude ? exclude.map((item) => `'${item}'`) : [];
 
         const result: any[] = await database.query(`
           SELECT
@@ -218,77 +198,27 @@ export class GraphQLAdapter implements IGraphQLSchemaAdapter<IFBGraphQLContext> 
                          
           WHERE r.rdb$view_blr IS NULL
             AND (r.rdb$system_flag IS NULL OR r.rdb$system_flag = 0)
-            ${include.length ? `AND r.rdb$relation_name IN (${include.join(", ")})` : ""}
-            ${exclude.length ? `AND r.rdb$relation_name NOT IN (${exclude.join(", ")})` : ""}
-            ${this._options.includePattern ? `AND r.rdb$relation_name SIMILAR TO '${this._options.includePattern}'` : ""}
-            ${this._options.excludePattern ? `AND r.rdb$relation_name NOT SIMILAR TO '${this._options.excludePattern}'` : ""}
+            ${includeEscaped.length ? `AND r.rdb$relation_name IN (${includeEscaped.join(", ")})` : ""}
+            ${excludeEscaped.length ? `AND r.rdb$relation_name NOT IN (${excludeEscaped.join(", ")})` : ""}
+            ${includePattern ? `AND r.rdb$relation_name SIMILAR TO '${includePattern}'` : ""}
+            ${excludePattern ? `AND r.rdb$relation_name NOT SIMILAR TO '${excludePattern}'` : ""}
             
           ORDER BY r.rdb$relation_name
         `);
 
         const definition: any = [{
-            name: {column: "tableName", id: true},
+            id: {column: "tableName", id: true},
+            name: {column: "tableName"},
+            description: {column: "tableName"},
             fields: [{
                 id: {column: "fieldKey", id: true},
                 name: "fieldName",
+                description: {column: "fieldName"},
                 primary: {column: "primaryFlag", type: "BOOLEAN", default: false},
-                type: {column: "fieldType", type: GraphQLAdapter._convertType},
+                type: {column: "fieldType", type: FirebirdAdapter._convertType},
                 nonNull: {column: "nullFlag", type: "BOOLEAN", default: false},
                 tableNameRef: "relationName",
                 fieldNameRef: "relationFieldName"
-            }]
-        }];
-
-        return NestHydrationJS().nest(result, definition);
-    }
-
-    private async _getNLPTables(database: Database): Promise<ITable[]> {
-        const result: any[] = await database.query(`
-          SELECT
-            TRIM(tables.usr$relation_name)                              AS "tableName",
-            TRIM(tables.usr$relation_name) 
-              || '_' || TRIM(fields.usr$field_name)                     AS "fieldKey",
-            
-            TRIM(REPLACE(entities.usr$name,  ',', ''))                  AS "tableIndexName",
-            TRIM(REPLACE(attr.usr$name,  ',', ''))                      AS "fieldIndexName",
-            ref_type.id                                                 AS "refKey",
-            ref_type.usr$description                                    AS "refDescription",
-            TRIM(REPLACE(ref_type_detail.usr$name,  ',', ''))           AS "refTypeIndexName"
-                
-          FROM usr$nlp_table tables
-          
-            LEFT JOIN usr$nlp_tentities entities
-              ON entities.usr$table_key = tables.id
-              AND TRIM(REPLACE(entities.usr$name,  ',', '')) > ''
-            LEFT JOIN usr$nlp_field fields
-              ON fields.usr$table_key = tables.id
-              LEFT JOIN usr$nlp_tentities_attr attr
-                ON attr.usr$field_key = fields.id
-                AND TRIM(REPLACE(attr.usr$name,  ',', '')) > ''
-              LEFT JOIN usr$nlp_field_ref field_ref ON field_ref.USR$FIELD_KEY = fields.ID
-                LEFT JOIN usr$nlp_ref_type ref_type ON ref_type.id = field_ref.usr$ref_type_key
-                  LEFT JOIN usr$nlp_ref_type_detail ref_type_detail
-                    ON ref_type_detail.usr$ref_type_key = ref_type.id
-                    AND TRIM(REPLACE(ref_type_detail.usr$name,  ',', '')) > ''
-        `);
-
-        const definition: any = [{
-            name: {column: "tableName", id: true},
-            indices: [{
-                key: "tableIndexName"
-            }],
-            fields: [{
-                id: {column: "fieldKey", id: true},
-                indices: [{
-                    key: "fieldIndexName"
-                }],
-                refs: [{
-                    id: {column: "refKey", type: "NUMBER"},
-                    name: "refDescription",
-                    indices: [{
-                        key: "refTypeIndexName"
-                    }]
-                }]
             }]
         }];
 

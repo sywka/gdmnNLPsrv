@@ -1,13 +1,13 @@
 import Queue from "promise-queue";
-import Database from "./Database";
-import {IFBGraphQLContext} from "./GraphQLAdapter";
+import FBDatabase from "./FBDatabase";
+import {IFBGraphQLContext} from "./FBAdapter";
 
-export default class GraphQLContext implements IFBGraphQLContext {
+export default class FBGraphQLContext implements IFBGraphQLContext {
 
-    private readonly _database: Database;
+    private readonly _database: FBDatabase;
     private readonly _queue: Queue = new Queue(1);
 
-    constructor(database: Database) {
+    constructor(database: FBDatabase) {
         this._database = database;
     }
 

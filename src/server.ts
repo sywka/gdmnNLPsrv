@@ -6,8 +6,8 @@ import express, {Application, Router} from "express";
 import serveStatic from "serve-static";
 import morgan from "morgan";
 import {CodeError, ErrorCode, getErrorMiddleware, HttpError, ResponseType} from "./middlewares/errorMiddleware";
+import {BaseRouter} from "./graphql-bridge";
 import Api from "./routers/Api";
-import BaseRouter from "./nlp/BaseRouter";
 
 export default class Server extends BaseRouter<void> {
 

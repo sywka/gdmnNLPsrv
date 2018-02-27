@@ -60,7 +60,7 @@ abstract class Base<Source extends (firebird.Database | firebird.Transaction)> {
     }
 }
 
-export class Transaction extends Base<firebird.Transaction> {
+export class FBTransaction extends Base<firebird.Transaction> {
 
     public isInTransaction(): boolean {
         return Boolean(this._source);
@@ -88,7 +88,7 @@ export class Transaction extends Base<firebird.Transaction> {
     }
 }
 
-export default class Database extends Base<firebird.Database> {
+export default class FBDatabase extends Base<firebird.Database> {
 
     constructor();
     constructor(source: firebird.Database);
@@ -114,7 +114,7 @@ export default class Database extends Base<firebird.Database> {
     public async attachOrCreate(options: DBOptions): Promise<void> {
         if (this._source) throw new Error("Database already created");
         return new Promise<void>((resolve, reject) => {
-            firebird.attachOrCreate(Database.bindOptions(options), (err, db) => {
+            firebird.attachOrCreate(FBDatabase.bindOptions(options), (err, db) => {
                 if (err) return reject(err);
                 this._source = db;
                 resolve();
@@ -125,7 +125,7 @@ export default class Database extends Base<firebird.Database> {
     public async attach(options: DBOptions): Promise<void> {
         if (this._source) throw new Error("Database already created");
         return new Promise<void>((resolve, reject) => {
-            firebird.attach(Database.bindOptions(options), (err, db) => {
+            firebird.attach(FBDatabase.bindOptions(options), (err, db) => {
                 if (err) return reject(err);
                 this._source = db;
                 resolve();
@@ -144,11 +144,11 @@ export default class Database extends Base<firebird.Database> {
         });
     }
 
-    public async transaction(isolation?: firebird.Isolation): Promise<Transaction> {
+    public async transaction(isolation?: firebird.Isolation): Promise<FBTransaction> {
         if (!this._source) throw new Error("Database need created");
-        return new Promise<Transaction>((resolve, reject) => {
+        return new Promise<FBTransaction>((resolve, reject) => {
             this._source.transaction(isolation, (err, transaction) => {
-                err ? reject(err) : resolve(new Transaction(transaction));
+                err ? reject(err) : resolve(new FBTransaction(transaction));
             });
         });
     }
@@ -163,7 +163,7 @@ export default class Database extends Base<firebird.Database> {
     }
 }
 
-export class ConnectionPool {
+export class FBConnectionPool {
 
     public static DEFAULT_MAX_POOL = 10;
 
@@ -173,9 +173,9 @@ export class ConnectionPool {
         return Boolean(this._connectionPool);
     }
 
-    public createConnectionPool(options: DBOptions, max: number = ConnectionPool.DEFAULT_MAX_POOL): void {
+    public createConnectionPool(options: DBOptions, max: number = FBConnectionPool.DEFAULT_MAX_POOL): void {
         if (this._connectionPool) throw new Error("Connection pool already created");
-        this._connectionPool = firebird.pool(max, Database.bindOptions(options), null);
+        this._connectionPool = firebird.pool(max, FBDatabase.bindOptions(options), null);
     }
 
     public destroyConnectionPool(): void {
@@ -184,12 +184,12 @@ export class ConnectionPool {
         this._connectionPool = null;
     }
 
-    public async attach(): Promise<Database> {
+    public async attach(): Promise<FBDatabase> {
         if (!this._connectionPool) throw new Error("Connection pool need created");
-        return new Promise<Database>((resolve, reject) => {
+        return new Promise<FBDatabase>((resolve, reject) => {
             this._connectionPool.get((err, db) => {
                 if (err) return reject(err);
-                resolve(new Database(db));
+                resolve(new FBDatabase(db));
             });
         });
     }

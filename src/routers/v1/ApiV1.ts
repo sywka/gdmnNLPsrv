@@ -2,8 +2,8 @@ import {NextFunction, Request, Response, Router} from "express";
 import config from "config";
 import {express} from "graphql-voyager/middleware";
 import {HttpError, ResponseType} from "../../middlewares/errorMiddleware";
-import BaseRouter from "../../nlp/BaseRouter";
-import NLP_FB_Express from "../../nlp/NLP_FB_Express";
+import {BaseRouter} from "../../graphql-bridge";
+import NLPFBExpress from "../../nlp/NLPFBExpress";
 
 export default class ApiV1 extends BaseRouter<void> {
 
@@ -17,7 +17,7 @@ export default class ApiV1 extends BaseRouter<void> {
             })(req, res, next);
         });
 
-        router.use("/", new NLP_FB_Express({
+        router.use("/", new NLPFBExpress({
             host: config.get("db.host"),
             port: config.get("db.port"),
             user: config.get("db.user"),

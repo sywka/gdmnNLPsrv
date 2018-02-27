@@ -1,53 +1,59 @@
 import {NextFunction, Request, Response, Router} from "express";
 import graphqlHTTP from "express-graphql";
-import Database, {ConnectionPool, DBOptions} from "./adapter/fb/Database";
-import GraphQLContext from "./adapter/fb/GraphQLContext";
-import {GraphQLAdapter, IBlobID, ISchemaOptions} from "./adapter/fb/GraphQLAdapter";
-import {NLPSchema} from "./NLPSchema";
-import BaseRouter from "./BaseRouter";
+import FBAdapter, {IBlobID, ISchemaDetailOptions} from "./FBAdapter";
+import FBDatabase, {DBOptions, FBConnectionPool} from "./FBDatabase";
+import FBGraphQLContext from "./FBGraphQLContext";
+import Schema from "../../Schema";
+import BaseRouter from "../../BaseRouter";
 
-export interface NLPExpressOptions extends ISchemaOptions, DBOptions {
+export interface FBExpressOptions extends ISchemaDetailOptions, DBOptions {
     graphiql?: boolean;
     maxConnectionPool?: number;
 }
 
-export default class NLP_FB_Express extends BaseRouter<NLPExpressOptions> {
+export default class FBExpress extends BaseRouter<FBExpressOptions> {
 
     public static BLOBS_PATH = "/blobs";
 
     protected _routerUrl: string = "";
-    protected _connectionPool: ConnectionPool;
-    protected _nlpSchema: NLPSchema<GraphQLContext>;
+    protected _connectionPool: FBConnectionPool;
+    protected _schema: Schema<FBGraphQLContext>;
 
-    constructor(options: NLPExpressOptions) {
+    constructor(options: FBExpressOptions) {
         super(options);
 
-        this._connectionPool = new ConnectionPool();
+        this._connectionPool = new FBConnectionPool();
         this._connectionPool.createConnectionPool(options, options.maxConnectionPool);
-
-        this._nlpSchema = new NLPSchema({
-            adapter: new GraphQLAdapter({
-                ...(options as DBOptions),
-                blobLinkCreator: (id: IBlobID) => {
-                    const idParam = new Buffer(`${JSON.stringify(id)}`).toString("base64");
-                    return `${this._routerUrl}${NLP_FB_Express.BLOBS_PATH}?id=${idParam}`;
-                },
-            })
-        });
-        this._nlpSchema.createSchema().catch(console.error);
+        this._schema = this._createSchema(options);
     }
 
-    protected routes(router: Router, options: NLPExpressOptions) {
+    protected _createSchema(options: FBExpressOptions): Schema<FBGraphQLContext> {
+        const schema = new Schema({
+            adapter: new FBAdapter({
+                ...(options as DBOptions),
+                blobLinkCreator: this._createBlobUrl.bind(this),
+            })
+        });
+        schema.createSchema().catch(console.error);
+        return schema;
+    }
+
+    protected _createBlobUrl(id: IBlobID) {
+        const idParam = new Buffer(`${JSON.stringify(id)}`).toString("base64");
+        return `${this._routerUrl}${FBExpress.BLOBS_PATH}?id=${idParam}`;
+    }
+
+    protected routes(router: Router, options: FBExpressOptions) {
         router.use("/", (req: Request, res: Response, next: NextFunction) => {
             this._routerUrl = req.protocol + "://" + req.get("host") + req.baseUrl;
             next();
         });
 
-        router.use(NLP_FB_Express.BLOBS_PATH, (req: Request, res: Response, next: NextFunction): void => {
+        router.use(FBExpress.BLOBS_PATH, (req: Request, res: Response, next: NextFunction): void => {
             req.query = JSON.parse(new Buffer(req.query.id, "base64").toString());
             next();
         });
-        router.use(NLP_FB_Express.BLOBS_PATH, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        router.use(FBExpress.BLOBS_PATH, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
             let database;
             try {
                 database = await this._connectionPool.attach();
@@ -57,7 +63,7 @@ export default class NLP_FB_Express extends BaseRouter<NLPExpressOptions> {
                     FROM ${req.query.table}
                     WHERE ${req.query.primaryField} = ${req.query.primaryKey} 
                 `);
-                const blobStream = await Database.blobToStream(result[0].binaryField);
+                const blobStream = await FBDatabase.blobToStream(result[0].binaryField);
                 blobStream.pipe(res);
 
             } catch (error) {
@@ -72,15 +78,15 @@ export default class NLP_FB_Express extends BaseRouter<NLPExpressOptions> {
         });
 
         router.use("/", graphqlHTTP(async () => {
-            if (!this._nlpSchema || !this._nlpSchema.schema) throw new Error("Temporarily unavailable");
+            if (!this._schema || !this._schema.schema) throw new Error("Temporarily unavailable");
 
             const startTime = Date.now();
             const database = await this._connectionPool.attach();
 
             return {
-                schema: this._nlpSchema.schema,
+                schema: this._schema.schema,
                 graphiql: options.graphiql,
-                context: new GraphQLContext(database),
+                context: new FBGraphQLContext(database),
                 async extensions() {
                     await database.detach();
                     return {runTime: (Date.now() - startTime) + " мсек"};
