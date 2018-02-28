@@ -5,8 +5,8 @@ import cors from "cors";
 import express, {Application, Router} from "express";
 import serveStatic from "serve-static";
 import morgan from "morgan";
+import {BaseRouter} from "graphql-sql-bridge";
 import {CodeError, ErrorCode, getErrorMiddleware, HttpError, ResponseType} from "./middlewares/errorMiddleware";
-import {BaseRouter} from "./graphql-bridge";
 import Api from "./routers/Api";
 
 export default class Server extends BaseRouter<void> {

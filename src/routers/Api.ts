@@ -1,6 +1,6 @@
 import {Router} from "express";
+import {BaseRouter} from "graphql-sql-bridge";
 import {CodeError, ErrorCode, HttpError, ResponseType} from "../middlewares/errorMiddleware";
-import {BaseRouter} from "../graphql-bridge";
 import ApiV1 from "./v1/ApiV1";
 
 export default class Api extends BaseRouter<void> {

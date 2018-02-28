@@ -1,5 +1,5 @@
 import {GraphQLFieldConfigMap, GraphQLList, GraphQLNonNull, GraphQLObjectType} from "graphql";
-import {IBase, IContext, IField, ITable, Schema} from "../graphql-bridge";
+import {IBase, IContext, IField, ITable, Schema} from "graphql-sql-bridge";
 
 export interface INLPTable extends ITable {
     fields: INLPField[];

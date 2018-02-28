@@ -1,6 +1,6 @@
 import NestHydrationJS from "nesthydrationjs";
+import {FBDatabase, FBAdapter} from "graphql-sql-bridge";
 import {INLPField, INLPTable} from "../../NLPSchema";
-import {FBDatabase, FirebirdAdapter} from "../../../graphql-bridge";
 
 export interface IIndex {
     readonly key: string;
@@ -20,7 +20,7 @@ export interface IFBField extends IBaseIndexing {
     refs: IBaseIndexing[];
 }
 
-export default class NLPFBAdapter extends FirebirdAdapter {
+export default class NLPFBAdapter extends FBAdapter {
 
     protected static async _getNLPTables(database: FBDatabase): Promise<IFBTable[]> {
         const result: any[] = await database.query(`

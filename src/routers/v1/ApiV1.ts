@@ -1,8 +1,8 @@
 import {NextFunction, Request, Response, Router} from "express";
 import config from "config";
 import {express} from "graphql-voyager/middleware";
+import {BaseRouter} from "graphql-sql-bridge";
 import {HttpError, ResponseType} from "../../middlewares/errorMiddleware";
-import {BaseRouter} from "../../graphql-bridge";
 import NLPFBExpress from "../../nlp/NLPFBExpress";
 
 export default class ApiV1 extends BaseRouter<void> {

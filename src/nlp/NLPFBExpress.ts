@@ -1,8 +1,6 @@
-import {DBOptions, FBExpress, FBExpressOptions} from "../graphql-bridge";
+import {DBOptions, FBExpress, FBExpressOptions, FBGraphQLContext, Schema} from "graphql-sql-bridge";
 import NLPSchema from "./NLPSchema";
 import NLPFBAdapter from "./adapter/fb/NLPFBAdapter";
-import Schema from "../graphql-bridge/Schema";
-import FBGraphQLContext from "../graphql-bridge/adapter/fb/FBGraphQLContext";
 
 export default class NLPFBExpress extends FBExpress {
 
