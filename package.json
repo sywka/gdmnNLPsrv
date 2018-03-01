@@ -14,12 +14,12 @@
   },
   "dependencies": {
     "body-parser": "^1.18.2",
-    "config": "^1.29.4",
+    "config": "^1.30.0",
     "cookie-parser": "^1.4.3",
     "cors": "^2.8.4",
     "express": "^4.16.2",
     "graphql": "^0.13.1",
-    "graphql-sql-bridge": "https://github.com/sywka/graphql-sql-bridge.git",
+    "graphql-sql-bridge": "https://github.com/sywka/graphql-sql-bridge.git#v.0.0.2",
     "graphql-voyager": "^1.0.0-rc.15",
     "morgan": "^1.9.0",
     "nesthydrationjs": "^1.0.3",
@@ -36,7 +36,7 @@
     "@types/express": "^4.11.1",
     "@types/express-graphql": "^0.0.36",
     "@types/graphql": "^0.12.4",
-    "@types/hapi": "^17.0.1",
+    "@types/hapi": "^17.0.4",
     "@types/koa": "^2.0.44",
     "@types/morgan": "^1.7.35",
     "typescript": "^2.7.2"
