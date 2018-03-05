@@ -1191,9 +1191,9 @@ graphql-request@^1.3.6:
   dependencies:
     cross-fetch "1.1.1"
 
-"graphql-sql-bridge@https://github.com/sywka/graphql-sql-bridge.git#v.0.0.3":
-  version "0.0.3"
-  resolved "https://github.com/sywka/graphql-sql-bridge.git#8d09c20be15f9df1a9333dc7f3e9b1af3218e767"
+"graphql-sql-bridge@https://github.com/sywka/graphql-sql-bridge.git#v.0.0.4":
+  version "0.0.4"
+  resolved "https://github.com/sywka/graphql-sql-bridge.git#c4180d0d673a78511dfd2bc9feeb973ce8a23f69"
   dependencies:
     express "^4.16.2"
     express-graphql "^0.6.12"

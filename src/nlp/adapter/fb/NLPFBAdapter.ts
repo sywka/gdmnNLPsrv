@@ -33,7 +33,6 @@ export default class NLPFBAdapter extends FBAdapter {
         }, description);
     }
 
-
     public async getTables(): Promise<INLPTable[]> {
         const tables = await super.getTables();
 
@@ -43,8 +42,7 @@ export default class NLPFBAdapter extends FBAdapter {
                     const result: any[] = await database.query(`
                       SELECT
                         TRIM(tables.usr$relation_name)                              AS "tableName",
-                        TRIM(tables.usr$relation_name) 
-                          || '_' || TRIM(fields.usr$field_name)                     AS "fieldKey",
+                        TRIM(fields.usr$field_name)                                 AS "fieldName",
                         
                         TRIM(REPLACE(entities.usr$name,  ',', ''))                  AS "tableIndexName",
                         TRIM(REPLACE(attr.usr$name,  ',', ''))                      AS "fieldIndexName",
@@ -75,7 +73,7 @@ export default class NLPFBAdapter extends FBAdapter {
                             key: "tableIndexName"
                         }],
                         fields: [{
-                            id: {column: "fieldKey", id: true},
+                            id: {column: "fieldName", id: true},
                             indices: [{
                                 key: "fieldIndexName"
                             }],
